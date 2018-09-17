@@ -44,9 +44,38 @@
 #define MAX_SATELLITES_IN_USE 12
 #define LOC_NI_NO_RESPONSE_TIME 20
 #define LOC_GPS_NI_RESPONSE_IGNORE 4
-#define ODCPI_INJECTED_POSITION_COUNT_PER_REQUEST 30
+#define ODCPI_EXPECTED_INJECTION_TIME_MS 10000
 
 class GnssAdapter;
+
+class OdcpiTimer : public LocTimer {
+public:
+    OdcpiTimer(GnssAdapter* adapter) :
+            LocTimer(), mAdapter(adapter), mActive(false) {}
+
+    inline void start() {
+        mActive = true;
+        LocTimer::start(ODCPI_EXPECTED_INJECTION_TIME_MS, false);
+    }
+    inline void stop() {
+        mActive = false;
+        LocTimer::stop();
+    }
+    inline void restart() {
+        stop();
+        start();
+    }
+    inline bool isActive() {
+        return mActive;
+    }
+
+private:
+    // Override
+    virtual void timeOutCallback() override;
+
+    GnssAdapter* mAdapter;
+    bool mActive;
+};
 
 typedef struct {
     pthread_t               thread;        /* NI thread */
@@ -75,6 +104,19 @@ typedef struct {
     uint64_t mask;
     uint32_t svIdOffset;
 } NmeaSvMeta;
+
+typedef struct {
+    double latitude;
+    double longitude;
+    float  accuracy;
+    // the CPI will be blocked until the boot time
+    // specified in blockedTillTsMs
+    int64_t blockedTillTsMs;
+    // CPIs whose both latitude and longitude differ
+    // no more than latLonThreshold will be blocked
+    // in units of degree
+    double latLonDiffThreshold;
+} BlockCPIInfo;
 
 using namespace loc_core;
 
@@ -117,12 +159,18 @@ class GnssAdapter : public LocAdapterBase {
     /* ==== ODCPI ========================================================================== */
     OdcpiRequestCallback mOdcpiRequestCb;
     bool mOdcpiRequestActive;
-    uint32_t mOdcpiInjectedPositionCount;
+    OdcpiTimer mOdcpiTimer;
+    OdcpiRequestInfo mOdcpiRequest;
+    void odcpiTimerExpire();
 
     /* === SystemStatus ===================================================================== */
     SystemStatus* mSystemStatus;
     std::string mServerUrl;
+    std::string mMoServerUrl;
     XtraSystemStatusObserver mXtraObserver;
+
+    /* === Misc ===================================================================== */
+    BlockCPIInfo mBlockCPIInfo;
 
     /*==== CONVERSION ===================================================================*/
     static void convertOptions(LocPosMode& out, const TrackingOptions& trackingOptions);
@@ -160,7 +208,7 @@ public:
     LocationCallbacks getClientCallbacks(LocationAPI* client);
     LocationCapabilitiesMask getCapabilities();
     void broadcastCapabilities(LocationCapabilitiesMask);
-    void setSuplHostServer(const char* server, int port);
+    void setSuplHostServer(const char* server, int port, LocServerType type);
 
     /* ==== TRACKING ======================================================================= */
     /* ======== COMMANDS ====(Called from Client Thread)==================================== */
@@ -210,6 +258,7 @@ public:
     void setControlCallbacksCommand(LocationControlCallbacks& controlCallbacks);
     void readConfigCommand();
     void setConfigCommand();
+    void requestUlpCommand();
     void initEngHubProxyCommand();
     uint32_t* gnssUpdateConfigCommand(GnssConfig config);
     uint32_t* gnssGetConfigCommand(GnssConfigFlagsMask mask);
@@ -251,7 +300,6 @@ public:
     /* ======== COMMANDS ====(Called from Client Thread)==================================== */
     void initOdcpiCommand(const OdcpiRequestCallback& callback);
     void injectOdcpiCommand(const Location& location);
-
     /* ======== RESPONSES ================================================================== */
     void reportResponse(LocationError err, uint32_t sessionId);
     void reportResponse(size_t count, LocationError* errs, uint32_t* ids);
@@ -264,6 +312,7 @@ public:
     virtual bool isInSession() { return !mTrackingSessions.empty(); }
     void initDefaultAgps();
     bool initEngHubProxy();
+    void odcpiTimerExpireEvent();
 
     /* ==== REPORTS ======================================================================== */
     /* ======== EVENTS ====(Called from QMI/EngineHub Thread)===================================== */
@@ -310,7 +359,7 @@ public:
     /*==== SYSTEM STATUS ================================================================*/
     inline SystemStatus* getSystemStatus(void) { return mSystemStatus; }
     std::string& getServerUrl(void) { return mServerUrl; }
-    void setServerUrl(const char* server) { mServerUrl.assign(server); }
+    std::string& getMoServerUrl(void) { return mMoServerUrl; }
 
     /*==== CONVERSION ===================================================================*/
     static uint32_t convertGpsLock(const GnssConfigGpsLock gpsLock);
@@ -326,7 +375,7 @@ public:
     static void convertSatelliteInfo(std::vector<GnssDebugSatelliteInfo>& out,
                                      const GnssSvType& in_constellation,
                                      const SystemStatusReports& in);
-    static void convertToGnssSvIdConfig(
+    static bool convertToGnssSvIdConfig(
             const std::vector<GnssSvIdSource>& blacklistedSvIds, GnssSvIdConfig& config);
     static void convertFromGnssSvIdConfig(
             const GnssSvIdConfig& svConfig, GnssConfig& config);
@@ -336,6 +385,8 @@ public:
 
     void injectLocationCommand(double latitude, double longitude, float accuracy);
     void injectTimeCommand(int64_t time, int64_t timeReference, int32_t uncertainty);
+    void blockCPICommand(double latitude, double longitude, float accuracy,
+                         int blockDurationMsec, double latLonDiffThreshold);
 };
 
 #endif //GNSS_ADAPTER_H
