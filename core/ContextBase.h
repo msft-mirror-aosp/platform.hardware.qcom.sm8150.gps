@@ -68,6 +68,8 @@ typedef struct loc_gps_cfg_s
     char           SUPL_HOST[MAX_SUPL_SERVER_URL_LENGTH];
     uint32_t       SUPL_PORT;
     uint32_t       MODEM_TYPE;
+    char           MO_SUPL_HOST[MAX_SUPL_SERVER_URL_LENGTH];
+    uint32_t       MO_SUPL_PORT;
 } loc_gps_cfg_s_type;
 
 /* NOTE: the implementaiton of the parser casts number
@@ -122,7 +124,16 @@ public:
     ContextBase(const MsgTask* msgTask,
                 LOC_API_ADAPTER_EVENT_MASK_T exMask,
                 const char* libName);
-    inline virtual ~ContextBase() { delete mLocApi; delete mLBSProxy; }
+    inline virtual ~ContextBase() {
+        if (nullptr != mLocApi) {
+            mLocApi->destroy();
+            mLocApi = nullptr;
+        }
+        if (nullptr != mLBSProxy) {
+            delete mLBSProxy;
+            mLBSProxy = nullptr;
+        }
+    }
 
     inline const MsgTask* getMsgTask() { return mMsgTask; }
     inline LocApiBase* getLocApi() { return mLocApi; }
