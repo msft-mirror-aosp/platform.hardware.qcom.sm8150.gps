@@ -631,11 +631,12 @@ GnssAdapter::setConfigCommand()
 
                 adapter.mLocApi->setSensorControlConfigSync(sapConf.SENSOR_USAGE,
                                         sapConf.SENSOR_PROVIDER);
+                /* Comment out LPPe injection as it's configured by MBN.
                 adapter.mLocApi->setLPPeProtocolCpSync(
                     adapter.mLocApi->convertLppeCp(gpsConf.LPPE_CP_TECHNOLOGY));
                 adapter.mLocApi->setLPPeProtocolUpSync(
                     adapter.mLocApi->convertLppeUp(gpsConf.LPPE_UP_TECHNOLOGY));
-
+                */
                 // set nmea mask type
                 uint32_t mask = 0;
                 if (NMEA_PROVIDER_MP == gpsConf.NMEA_PROVIDER) {
