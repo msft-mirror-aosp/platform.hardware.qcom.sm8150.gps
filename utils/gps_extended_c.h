@@ -122,7 +122,8 @@ typedef enum {
     LOC_SUPPORTED_FEATURE_FDCL, /**< Support FDCL */
     LOC_SUPPORTED_FEATURE_CONSTELLATION_ENABLEMENT_V02, /**< Support constellation enablement */
     LOC_SUPPORTED_FEATURE_AGPM_V02, /**< Support AGPM feature */
-    LOC_SUPPORTED_FEATURE_XTRA_INTEGRITY /**< Support XTRA integrity */
+    LOC_SUPPORTED_FEATURE_XTRA_INTEGRITY, /**< Support XTRA integrity */
+    LOC_SUPPORTED_FEATURE_FDCL_2 /**< Support FDCL V2 */
 } loc_supported_feature_enum;
 
 typedef struct {
@@ -258,7 +259,8 @@ typedef enum loc_server_type {
     LOC_AGPS_CDMA_PDE_SERVER,
     LOC_AGPS_CUSTOM_PDE_SERVER,
     LOC_AGPS_MPC_SERVER,
-    LOC_AGPS_SUPL_SERVER
+    LOC_AGPS_SUPL_SERVER,
+    LOC_AGPS_MO_SUPL_SERVER
 } LocServerType;
 
 typedef enum loc_position_mode_type {
@@ -294,7 +296,7 @@ typedef enum loc_position_mode_type {
 #define GPS_DEFAULT_FIX_INTERVAL_MS      1000
 
 /** Flags to indicate which values are valid in a GpsLocationExtended. */
-typedef uint32_t GpsLocationExtendedFlags;
+typedef uint64_t GpsLocationExtendedFlags;
 /** GpsLocationExtended has valid pdop, hdop, vdop. */
 #define GPS_LOCATION_EXTENDED_HAS_DOP 0x0001
 /** GpsLocationExtended has valid altitude mean sea level. */
@@ -349,14 +351,19 @@ typedef uint32_t GpsLocationExtendedFlags;
 #define GPS_LOCATION_EXTENDED_HAS_EAST_VEL_UNC   0x2000000
 /** GpsLocationExtended has up Velocity Uncertainty */
 #define GPS_LOCATION_EXTENDED_HAS_UP_VEL_UNC   0x4000000
-/** GpsLocationExtended has up Clock Bias */
+/** GpsLocationExtended has Clock Bias */
 #define GPS_LOCATION_EXTENDED_HAS_CLOCK_BIAS   0x8000000
-/** GpsLocationExtended has up Clock Bias std deviation*/
+/** GpsLocationExtended has Clock Bias std deviation*/
 #define GPS_LOCATION_EXTENDED_HAS_CLOCK_BIAS_STD_DEV   0x10000000
-/** GpsLocationExtended has up Clock drift*/
+/** GpsLocationExtended has Clock drift*/
 #define GPS_LOCATION_EXTENDED_HAS_CLOCK_DRIFT   0x20000000
-/** GpsLocationExtended has up Clock drift std deviation**/
+/** GpsLocationExtended has Clock drift std deviation**/
 #define GPS_LOCATION_EXTENDED_HAS_CLOCK_DRIFT_STD_DEV   0x40000000
+/** GpsLocationExtended has leap seconds **/
+#define GPS_LOCATION_EXTENDED_HAS_LEAP_SECONDS   0x80000000
+/** GpsLocationExtended has time uncertainty **/
+#define GPS_LOCATION_EXTENDED_HAS_TIME_UNC   0x100000000
+
 
 typedef uint32_t LocNavSolutionMask;
 /* Bitmask to specify whether SBAS ionospheric correction is used  */
@@ -385,6 +392,16 @@ typedef uint32_t LocPosDataMask;
 #define LOC_NAV_DATA_HAS_YAW_RATE ((LocPosDataMask)0x0008)
 /* Bitmask to specify whether Navigation data has Body pitch */
 #define LOC_NAV_DATA_HAS_PITCH ((LocPosDataMask)0x0010)
+/* Bitmask to specify whether Navigation data has Forward Acceleration Unc  */
+#define LOC_NAV_DATA_HAS_LONG_ACCEL_UNC ((LocPosDataMask)0x0020)
+/* Bitmask to specify whether Navigation data has Sideward Acceleration Unc*/
+#define LOC_NAV_DATA_HAS_LAT_ACCEL_UNC ((LocPosDataMask)0x0040)
+/* Bitmask to specify whether Navigation data has Vertical Acceleration Unc*/
+#define LOC_NAV_DATA_HAS_VERT_ACCEL_UNC ((LocPosDataMask)0x0080)
+/* Bitmask to specify whether Navigation data has Heading Rate Unc*/
+#define LOC_NAV_DATA_HAS_YAW_RATE_UNC ((LocPosDataMask)0x0100)
+/* Bitmask to specify whether Navigation data has Body pitch Unc*/
+#define LOC_NAV_DATA_HAS_PITCH_UNC ((LocPosDataMask)0x0200)
 
 /** GPS PRN Range */
 #define GPS_SV_PRN_MIN      1
@@ -438,14 +455,24 @@ typedef struct {
    uint32_t        bodyFrameDatamask;
    /* Forward Acceleration in body frame (m/s2)*/
    float           longAccel;
+   /** Uncertainty of Forward Acceleration in body frame */
+   float           longAccelUnc;
    /* Sideward Acceleration in body frame (m/s2)*/
    float           latAccel;
+   /** Uncertainty of Side-ward Acceleration in body frame */
+   float           latAccelUnc;
    /* Vertical Acceleration in body frame (m/s2)*/
    float           vertAccel;
+   /** Uncertainty of Vertical Acceleration in body frame */
+   float           vertAccelUnc;
    /* Heading Rate (Radians/second) */
    float           yawRate;
+   /** Uncertainty of Heading Rate */
+   float           yawRateUnc;
    /* Body pitch (Radians) */
    float           pitch;
+   /** Uncertainty of Body pitch */
+   float           pitchRadUnc;
 }LocPositionDynamics;
 
 typedef struct {
@@ -637,7 +664,7 @@ typedef struct {
     /** SV Info source used in computing this fix */
     LocSvInfoSource sv_source;
     /** Body Frame Dynamics: 4wayAcceleration and pitch set with validity */
-    LocPositionDynamics bodyFrameData;
+    GnssLocationPositionDynamics bodyFrameData;
     /** GPS Time */
     GPSTimeStruct gpsTime;
     GnssSystemTime gnssSystemTime;
@@ -686,6 +713,10 @@ typedef struct {
     uint8_t numOfMeasReceived;
     /** Measurement Usage Information */
     GpsMeasUsageInfo measUsageInfo[GNSS_SV_MAX];
+    /** Leap Seconds */
+    uint8_t leapSeconds;
+    /** Time uncertainty in milliseconds   */
+    float timeUncMs;
 } GpsLocationExtended;
 
 enum loc_sess_status {
@@ -797,6 +828,7 @@ enum loc_api_adapter_event_index {
     LOC_API_ADAPTER_BATCH_STATUS,                      // batch status
     LOC_API_ADAPTER_FDCL_SERVICE_REQ,                  // FDCL service request
     LOC_API_ADAPTER_REPORT_UNPROPAGATED_POSITION,      // Unpropagated Position report
+    LOC_API_ADAPTER_BS_OBS_DATA_SERVICE_REQ,           // BS observation data request
     LOC_API_ADAPTER_EVENT_MAX
 };
 
@@ -834,6 +866,7 @@ enum loc_api_adapter_event_index {
 #define LOC_API_ADAPTER_BIT_BATCH_STATUS                     (1<<LOC_API_ADAPTER_BATCH_STATUS)
 #define LOC_API_ADAPTER_BIT_FDCL_SERVICE_REQ                 (1ULL<<LOC_API_ADAPTER_FDCL_SERVICE_REQ)
 #define LOC_API_ADAPTER_BIT_PARSED_UNPROPAGATED_POSITION_REPORT (1ULL<<LOC_API_ADAPTER_REPORT_UNPROPAGATED_POSITION)
+#define LOC_API_ADAPTER_BIT_BS_OBS_DATA_SERVICE_REQ          (1ULL<<LOC_API_ADAPTER_BS_OBS_DATA_SERVICE_REQ)
 
 typedef uint64_t LOC_API_ADAPTER_EVENT_MASK_T;
 
@@ -1564,7 +1597,7 @@ typedef void (*LocAgpsCloseResultCb)(bool isSuccess, AGpsExtType agpsType, void*
 
 #define SOCKET_DIR_LOCATION            "/dev/socket/location/"
 #define SOCKET_DIR_EHUB                "/dev/socket/location/ehub/"
-#define SOCKET_TO_LOCATION_HAL_DAEMON  "/dev/socket/location/hal_daemon"
+#define SOCKET_TO_LOCATION_HAL_DAEMON  "/dev/socket/loc_client/hal_daemon"
 
 #define SOCKET_DIR_TO_CLIENT           "/dev/socket/loc_client/"
 #define SOCKET_TO_LOCATION_CLIENT_BASE "/dev/socket/loc_client/toclient"
