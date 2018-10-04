@@ -188,6 +188,35 @@ bool LocApiBase::isInSession()
     return inSession;
 }
 
+bool LocApiBase::needReport(const UlpLocation& ulpLocation,
+                                   enum loc_sess_status status,
+                                   LocPosTechMask techMask)
+{
+    bool reported = false;
+
+    if (LOC_SESS_SUCCESS == status) {
+        // this is a final fix
+        LocPosTechMask mask =
+            LOC_POS_TECH_MASK_SATELLITE | LOC_POS_TECH_MASK_SENSORS | LOC_POS_TECH_MASK_HYBRID;
+        // it is a Satellite fix or a sensor fix
+        reported = (mask & techMask);
+    }
+    else if (LOC_SESS_INTERMEDIATE == status &&
+        LOC_SESS_INTERMEDIATE == ContextBase::mGps_conf.INTERMEDIATE_POS) {
+        // this is a intermediate fix and we accept intermediate
+
+        // it is NOT the case that
+        // there is inaccuracy; and
+        // we care about inaccuracy; and
+        // the inaccuracy exceeds our tolerance
+        reported = !((ulpLocation.gpsLocation.flags & LOC_GPS_LOCATION_HAS_ACCURACY) &&
+            (ContextBase::mGps_conf.ACCURACY_THRES != 0) &&
+            (ulpLocation.gpsLocation.accuracy > ContextBase::mGps_conf.ACCURACY_THRES));
+    }
+
+    return reported;
+}
+
 void LocApiBase::addAdapter(LocAdapterBase* adapter)
 {
     for (int i = 0; i < MAX_ADAPTERS && mLocAdapters[i] != adapter; i++) {
@@ -240,6 +269,30 @@ void LocApiBase::updateEvtMask()
     mMsgTask->sendMsg(new LocOpenMsg(this));
 }
 
+void LocApiBase::updateNmeaMask(uint32_t mask)
+{
+    struct LocSetNmeaMsg : public LocMsg {
+        LocApiBase* mLocApi;
+        uint32_t mMask;
+        inline LocSetNmeaMsg(LocApiBase* locApi, uint32_t mask) :
+            LocMsg(), mLocApi(locApi), mMask(mask)
+        {
+            locallog();
+        }
+        inline virtual void proc() const {
+            mLocApi->setNMEATypesSync(mMask);
+        }
+        inline void locallog() const {
+            LOC_LOGv("LocSyncNmea NmeaMask: %" PRIx32 "\n", mMask);
+        }
+        inline virtual void log() const {
+            locallog();
+        }
+    };
+
+    mMsgTask->sendMsg(new LocSetNmeaMsg(this, mask));
+}
+
 void LocApiBase::handleEngineUpEvent()
 {
     LocDualContext::injectFeatureConfig(mContext);
@@ -259,7 +312,9 @@ void LocApiBase::handleEngineDownEvent()
 void LocApiBase::reportPosition(UlpLocation& location,
                                 GpsLocationExtended& locationExtended,
                                 enum loc_sess_status status,
-                                LocPosTechMask loc_technology_mask)
+                                LocPosTechMask loc_technology_mask,
+                                GnssDataNotification* pDataNotify,
+                                int msInWeek)
 {
     // print the location info before delivering
     LOC_LOGD("flags: %d\n  source: %d\n  latitude: %f\n  longitude: %f\n  "
@@ -281,7 +336,9 @@ void LocApiBase::reportPosition(UlpLocation& location,
     // loop through adapters, and deliver to all adapters.
     TO_ALL_LOCADAPTERS(
         mLocAdapters[i]->reportPositionEvent(location, locationExtended,
-                                             status, loc_technology_mask)
+                                             status, loc_technology_mask,
+                                             false,
+                                             pDataNotify, msInWeek)
     );
 }
 
@@ -361,6 +418,12 @@ void LocApiBase::reportStatus(LocGpsStatusValue status)
 {
     // loop through adapters, and deliver to all adapters.
     TO_ALL_LOCADAPTERS(mLocAdapters[i]->reportStatus(status));
+}
+
+void LocApiBase::reportData(GnssDataNotification& dataNotify, int msInWeek)
+{
+    // loop through adapters, and deliver to all adapters.
+    TO_ALL_LOCADAPTERS(mLocAdapters[i]->reportDataEvent(dataNotify, msInWeek));
 }
 
 void LocApiBase::reportNmea(const char* nmea, int length)
@@ -522,10 +585,6 @@ LocationError LocApiBase::
     setLPPConfigSync(GnssConfigLppProfile /*profile*/)
 DEFAULT_IMPL(LOCATION_ERROR_SUCCESS)
 
-enum loc_api_adapter_err LocApiBase::
-    setSensorControlConfigSync(int /*sensorUsage*/,
-                           int /*sensorProvider*/)
-DEFAULT_IMPL(LOC_API_ADAPTER_ERR_SUCCESS)
 
 enum loc_api_adapter_err LocApiBase::
     setSensorPropertiesSync(bool /*gyroBiasVarianceRandomWalk_valid*/,
