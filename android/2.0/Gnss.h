@@ -127,7 +127,8 @@ struct Gnss : public IGnss {
     Return<sp<::android::hardware::gnss::visibility_control::V1_0::IGnssVisibilityControl>>
             getExtensionVisibilityControl() override;
 
-
+    // TODO Unimplemented method
+    Return<bool> injectBestLocation_2_0(const V2_0::GnssLocation& location) override;
 
     // These methods are not part of the IGnss base class.
     GnssAPIClient* getApi();
