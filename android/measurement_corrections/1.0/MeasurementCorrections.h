@@ -58,6 +58,7 @@ struct MeasurementCorrections : public IMeasurementCorrections {
 
 // Methods from ::android::hardware::gnss::measurement_corrections::V1_0::IMeasurementCorrections follow.
 Return<bool> setCorrections(const ::android::hardware::gnss::measurement_corrections::V1_0::MeasurementCorrections& corrections) override;
+Return<bool> setCallback(const sp<V1_0::IMeasurementCorrectionsCallback>& callback) override;
 
 };
 
