@@ -493,6 +493,16 @@ Return<bool> Gnss::injectBestLocation_2_0(const V2_0::GnssLocation& location) {
     ENTRY_LOG_CALLFLOW();
     return true;
 }
+// TODO Unimplemented method
+Return<sp<V2_0::IGnssDebug>> Gnss::getExtensionGnssDebug_2_0() {
+    return sp<V2_0::IGnssDebug>{};
+}
+// TODO Unimplemented method
+Return<sp<V2_0::IGnssBatching>> Gnss::getExtensionGnssBatching_2_0() {
+    return sp<V2_0::IGnssBatching>{};
+}
+
+
 IGnss* HIDL_FETCH_IGnss(const char* hal) {
     ENTRY_LOG_CALLFLOW();
     IGnss* iface = nullptr;
