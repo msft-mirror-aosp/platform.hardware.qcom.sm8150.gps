@@ -54,6 +54,9 @@ static void convertGnssData_2_0(GnssMeasurementsNotification& in,
 static void convertGnssMeasurement(GnssMeasurementsData& in,
         V1_0::IGnssMeasurementCallback::GnssMeasurement& out);
 static void convertGnssClock(GnssMeasurementsClock& in, IGnssMeasurementCallback::GnssClock& out);
+// Temporary implementation
+static void convertGnssCodeType(GnssMeasurementsCodeType& in,
+        ::android::hardware::hidl_string& out);
 
 MeasurementAPIClient::MeasurementAPIClient() :
     mGnssMeasurementCbIface(nullptr),
@@ -334,6 +337,57 @@ static void convertGnssData(GnssMeasurementsNotification& in,
     convertGnssClock(in.clock, out.clock);
 }
 
+// Temporary implementation
+static void convertGnssCodeType(GnssMeasurementsCodeType& in, ::android::hardware::hidl_string& out)
+{
+    switch(in){
+        case GNSS_MEASUREMENTS_CODE_TYPE_A:
+                out = "A";
+            break;
+        case GNSS_MEASUREMENTS_CODE_TYPE_B:
+                out = "B";
+            break;
+        case GNSS_MEASUREMENTS_CODE_TYPE_C:
+                out = "C";
+            break;
+        case GNSS_MEASUREMENTS_CODE_TYPE_I:
+                out = "I";
+            break;
+        case GNSS_MEASUREMENTS_CODE_TYPE_L:
+                out = "L";
+            break;
+        case GNSS_MEASUREMENTS_CODE_TYPE_M:
+                out = "M";
+            break;
+        case GNSS_MEASUREMENTS_CODE_TYPE_P:
+                out = "P";
+            break;
+        case GNSS_MEASUREMENTS_CODE_TYPE_Q:
+                out = "Q";
+            break;
+        case GNSS_MEASUREMENTS_CODE_TYPE_S:
+                out = "S";
+            break;
+        case GNSS_MEASUREMENTS_CODE_TYPE_W:
+                out = "W";
+            break;
+        case GNSS_MEASUREMENTS_CODE_TYPE_X:
+                out = "X";
+            break;
+        case GNSS_MEASUREMENTS_CODE_TYPE_Y:
+                out = "Y";
+            break;
+        case GNSS_MEASUREMENTS_CODE_TYPE_Z:
+                out = "Z";
+            break;
+        case GNSS_MEASUREMENTS_CODE_TYPE_N:
+                out = "N";
+            break;
+        default:
+                out = "UNKNOWN";
+    }
+}
+
 static void convertGnssData_1_1(GnssMeasurementsNotification& in,
         V1_1::IGnssMeasurementCallback::GnssData& out)
 {
@@ -374,9 +428,8 @@ static void convertGnssData_2_0(GnssMeasurementsNotification& in,
         if (in.measurements[i].adrStateMask & GNSS_MEASUREMENTS_ACCUMULATED_DELTA_RANGE_STATE_HALF_CYCLE_RESOLVED_BIT)
             out.measurements[i].v1_1.accumulatedDeltaRangeState |=
             IGnssMeasurementCallback::GnssAccumulatedDeltaRangeState::ADR_STATE_HALF_CYCLE_RESOLVED;
-        out.measurements[i].codeType =
-            static_cast<IGnssMeasurementCallback::GnssMeasurementCodeType>(in.measurements[i].codeType);
-        out.measurements[i].otherCodeTypeName = in.measurements[i].otherCodeTypeName;
+        // Temporary implementation
+        convertGnssCodeType(in.measurements[i].codeType,out.measurements[i].codeType);
         if (in.measurements[i].stateMask & GNSS_MEASUREMENTS_STATE_CODE_LOCK_BIT)
             out.measurements[i].state |= IGnssMeasurementCallback::GnssMeasurementState::STATE_CODE_LOCK;
         if (in.measurements[i].stateMask & GNSS_MEASUREMENTS_STATE_BIT_SYNC_BIT)

@@ -129,6 +129,8 @@ struct Gnss : public IGnss {
 
     // TODO Unimplemented method
     Return<bool> injectBestLocation_2_0(const V2_0::GnssLocation& location) override;
+    Return<sp<V2_0::IGnssDebug>> getExtensionGnssDebug_2_0() override;
+    Return<sp<V2_0::IGnssBatching>> getExtensionGnssBatching_2_0() override;
 
     // These methods are not part of the IGnss base class.
     GnssAPIClient* getApi();
