@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2014, 2016-2018 The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2014, 2016-2019 The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -381,6 +381,13 @@ void LocApiBase::reportDeleteAidingDataEvent(GnssAidingData& aidingData) {
 }
 
 
+void LocApiBase::sendNfwNotification(GnssNfwNotification& notification)
+{
+    // loop through adapters, and deliver to the first handling adapter.
+    TO_ALL_LOCADAPTERS(mLocAdapters[i]->reportNfwNotificationEvent(notification));
+
+}
+
 void LocApiBase::reportSv(GnssSvNotification& svNotify)
 {
     const char* constellationString[] = { "Unknown", "GPS", "SBAS", "GLONASS",
@@ -673,6 +680,10 @@ DEFAULT_IMPL(0)
 GnssConfigLppeUserPlaneMask LocApiBase::convertLppeUp(const uint32_t /*lppeUserPlaneMask*/)
 DEFAULT_IMPL(0)
 
+LocationError LocApiBase::setEmergencyExtensionWindowSync(
+        const uint32_t /*emergencyExtensionSeconds*/)
+DEFAULT_IMPL(LOCATION_ERROR_SUCCESS)
+
 void LocApiBase::
    getWwanZppFix()
 DEFAULT_IMPL()
@@ -727,7 +738,6 @@ LocationError LocApiBase::
     setPositionAssistedClockEstimatorMode(bool /*enabled*/)
 DEFAULT_IMPL(LOCATION_ERROR_SUCCESS)
 
-LocationError LocApiBase::
-    getGnssEnergyConsumed()
+LocationError LocApiBase::getGnssEnergyConsumed()
 DEFAULT_IMPL(LOCATION_ERROR_SUCCESS)
 } // namespace loc_core

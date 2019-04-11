@@ -1,4 +1,4 @@
-/* Copyright (c) 2017-2018, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2017-2019, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -162,6 +162,12 @@ class GnssAdapter : public LocAdapterBase {
     AgpsCbInfo mAgpsCbInfo;
     void initAgps(const AgpsCbInfo& cbInfo);
 
+    /* ==== NFW =========================================================================== */
+    NfwStatusCb mNfwCb;
+    inline void initNfw(const NfwCbInfo& cbInfo) {
+        mNfwCb = (NfwStatusCb)cbInfo.visibilityControlCb;
+    }
+
     /* ==== ODCPI ========================================================================== */
     OdcpiRequestCallback mOdcpiRequestCb;
     bool mOdcpiRequestActive;
@@ -175,6 +181,7 @@ class GnssAdapter : public LocAdapterBase {
     std::string mMoServerUrl;
     XtraSystemStatusObserver mXtraObserver;
     LocationSystemInfo mLocSystemInfo;
+    std::vector<GnssSvIdSource> mBlacklistedSvIds;
 
     /* === Misc ===================================================================== */
     BlockCPIInfo mBlockCPIInfo;
@@ -278,6 +285,9 @@ public:
     uint32_t gnssDeleteAidingDataCommand(GnssAidingData& data);
     void deleteAidingData(const GnssAidingData &data, uint32_t sessionId);
     void gnssUpdateXtraThrottleCommand(const bool enabled);
+    std::vector<LocationError> gnssUpdateConfig(const std::string& oldServerUrl,
+            const std::string& oldMoServerUrl, const GnssConfig& gnssConfigRequested,
+            const GnssConfig& gnssConfigNeedEngineUpdate, size_t count = 0);
 
     /* ==== GNSS SV TYPE CONFIG ============================================================ */
     /* ==== COMMANDS ====(Called from Client Thread)======================================== */
@@ -304,11 +314,13 @@ public:
     /* ======== COMMANDS ====(Called from Client Thread)==================================== */
     void initDefaultAgpsCommand();
     void initAgpsCommand(const AgpsCbInfo& cbInfo);
+    void initNfwCommand(const NfwCbInfo& cbInfo);
     void dataConnOpenCommand(AGpsExtType agpsType,
             const char* apnName, int apnLen, AGpsBearerType bearerType);
     void dataConnClosedCommand(AGpsExtType agpsType);
     void dataConnFailedCommand(AGpsExtType agpsType);
     void getGnssEnergyConsumedCommand(GnssEnergyConsumedCallback energyConsumedCb);
+    void nfwControlCommand(bool enable);
 
     /* ========= ODCPI ===================================================================== */
     /* ======== COMMANDS ====(Called from Client Thread)==================================== */
@@ -321,8 +333,8 @@ public:
     LocationControlCallbacks& getControlCallbacks() { return mControlCallbacks; }
     void setControlCallbacks(const LocationControlCallbacks& controlCallbacks)
     { mControlCallbacks = controlCallbacks; }
-    void setPowerVoteId(uint32_t id) { mPowerVoteId = id; }
-    uint32_t getPowerVoteId() { return mPowerVoteId; }
+    void setAfwControlId(uint32_t id) { mPowerVoteId = id; }
+    uint32_t getAfwControlId() { return mPowerVoteId; }
     virtual bool isInSession() { return !mTrackingSessions.empty(); }
     void initDefaultAgps();
     bool initEngHubProxy();
@@ -356,6 +368,7 @@ public:
     virtual bool releaseATL(int connHandle);
     virtual bool requestOdcpiEvent(OdcpiRequestInfo& request);
     virtual bool reportDeleteAidingDataEvent(GnssAidingData& aidingData);
+    virtual void reportNfwNotificationEvent(GnssNfwNotification& notification);
 
     /* ======== UTILITIES ================================================================= */
     bool needReport(const UlpLocation& ulpLocation,
@@ -375,6 +388,11 @@ public:
     void invokeGnssEnergyConsumedCallback(uint64_t energyConsumedSinceFirstBoot);
     void saveGnssEnergyConsumedCallback(GnssEnergyConsumedCallback energyConsumedCb);
     void reportLocationSystemInfo(const LocationSystemInfo & locationSystemInfo);
+    inline void reportNfwNotification(const GnssNfwNotification& notification) {
+        if (NULL != mNfwCb) {
+            mNfwCb(notification);
+        }
+    }
 
     /*======== GNSSDEBUG ================================================================*/
     bool getDebugReport(GnssDebugReport& report);
@@ -389,8 +407,6 @@ public:
     std::string& getMoServerUrl(void) { return mMoServerUrl; }
 
     /*==== CONVERSION ===================================================================*/
-    static uint32_t convertGpsLock(const GnssConfigGpsLock gpsLock);
-    static GnssConfigGpsLock convertGpsLock(const uint32_t gpsLock);
     static uint32_t convertSuplVersion(const GnssConfigSuplVersion suplVersion);
     static uint32_t convertLppProfile(const GnssConfigLppProfile lppProfile);
     static uint32_t convertEP4ES(const GnssConfigEmergencyPdnForEmergencySupl);
