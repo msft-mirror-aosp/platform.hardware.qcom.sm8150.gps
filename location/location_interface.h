@@ -1,4 +1,4 @@
-/* Copyright (c) 2017 The Linux Foundation. All rights reserved.
+/* Copyright (c) 2017-2019 The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -76,12 +76,16 @@ struct GnssInterface {
     void (*agpsDataConnClosed)(AGpsExtType agpsType);
     void (*agpsDataConnFailed)(AGpsExtType agpsType);
     void (*getDebugReport)(GnssDebugReport& report);
-    void (*updateConnectionStatus)(bool connected, int8_t type);
+    void (*updateConnectionStatus)(bool connected, int8_t type, bool roaming,
+                                   NetworkHandle networkHandle);
     void (*odcpiInit)(const OdcpiRequestCallback& callback);
     void (*odcpiInject)(const Location& location);
     void (*blockCPI)(double latitude, double longitude, float accuracy,
                      int blockDurationMsec, double latLonDiffThreshold);
     void (*getGnssEnergyConsumed)(GnssEnergyConsumedCallback energyConsumedCb);
+    void (*enableNfwLocationAccess)(bool enable);
+    void (*nfwInit)(const NfwCbInfo& cbInfo);
+    uint8_t (*getGpsLock)();
 };
 
 struct FlpInterface {
