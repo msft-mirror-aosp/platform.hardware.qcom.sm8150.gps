@@ -2017,6 +2017,7 @@ struct AGnssExtStatusIpV6 {
 /*
 * Represents the the Nfw Notification structure
 */
+#define GNSS_MAX_NFW_APP_STRING_LEN 64
 #define GNSS_MAX_NFW_STRING_LEN  20
 
 typedef enum {
@@ -2044,7 +2045,7 @@ typedef enum {
 } GnssNfwResponseType;
 
 typedef struct {
-    char                    proxyAppPackageName[GNSS_MAX_NFW_STRING_LEN];
+    char                    proxyAppPackageName[GNSS_MAX_NFW_APP_STRING_LEN];
     GnssNfwProtocolStack    protocolStack;
     char                    otherProtocolStackName[GNSS_MAX_NFW_STRING_LEN];
     GnssNfwRequestor        requestor;
