@@ -128,7 +128,6 @@ struct Gnss : public IGnss {
     Return<sp<::android::hardware::gnss::visibility_control::V1_0::IGnssVisibilityControl>>
             getExtensionVisibilityControl() override;
 
-    // TODO Unimplemented method
     Return<sp<V2_0::IGnssDebug>> getExtensionGnssDebug_2_0() override;
     Return<sp<V2_0::IGnssBatching>> getExtensionGnssBatching_2_0() override;
 
@@ -140,6 +139,7 @@ struct Gnss : public IGnss {
 
     // Callback for ODCPI request
     void odcpiRequestCb(const OdcpiRequestInfo& request);
+
  private:
     struct GnssDeathRecipient : hidl_death_recipient {
         GnssDeathRecipient(sp<Gnss> gnss) : mGnss(gnss) {
@@ -154,8 +154,6 @@ struct Gnss : public IGnss {
 
     sp<V1_0::IGnssNi> mGnssNi = nullptr;
     sp<V1_0::IGnssGeofencing> mGnssGeofencingIface = nullptr;
-    sp<V1_0::IGnssBatching> mGnssBatching = nullptr;
-    sp<V1_0::IGnssDebug> mGnssDebug = nullptr;
     sp<V1_0::IAGnss> mAGnssIface = nullptr;
     sp<V1_0::IGnssCallback> mGnssCbIface = nullptr;
     sp<V1_0::IGnssNiCallback> mGnssNiCbIface = nullptr;
@@ -164,6 +162,9 @@ struct Gnss : public IGnss {
     sp<V2_0::IAGnssRil> mGnssRil = nullptr;
     sp<V2_0::IGnssMeasurement> mGnssMeasurement = nullptr;
     sp<V2_0::IGnssConfiguration> mGnssConfig = nullptr;
+    sp<V2_0::IGnssBatching> mGnssBatching = nullptr;
+    sp<V2_0::IGnssDebug> mGnssDebug = nullptr;
+    sp<V2_0::IGnssCallback> mGnssCbIface_2_0 = nullptr;
     sp<IMeasurementCorrections> mGnssMeasCorr = nullptr;
     sp<IGnssVisibilityControl> mVisibCtrl = nullptr;
 
