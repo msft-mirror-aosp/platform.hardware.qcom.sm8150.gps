@@ -3578,20 +3578,21 @@ GnssAdapter::requestNiNotify(const GnssNiNotification& notify, const void* data)
 }
 
 void
-GnssAdapter::reportGnssMeasurementDataEvent(const GnssMeasurementsNotification& measurements,
+GnssAdapter::reportGnssMeasurementsEvent(const GnssMeasurements& gnssMeasurements,
                                             int msInWeek)
 {
     LOC_LOGD("%s]: msInWeek=%d", __func__, msInWeek);
 
     struct MsgReportGnssMeasurementData : public LocMsg {
         GnssAdapter& mAdapter;
+        GnssMeasurements mGnssMeasurements;
         GnssMeasurementsNotification mMeasurementsNotify;
         inline MsgReportGnssMeasurementData(GnssAdapter& adapter,
-                                            const GnssMeasurementsNotification& measurements,
+                                            const GnssMeasurements& gnssMeasurements,
                                             int msInWeek) :
                 LocMsg(),
                 mAdapter(adapter),
-                mMeasurementsNotify(measurements) {
+                mMeasurementsNotify(gnssMeasurements.gnssMeasNotification) {
             if (-1 != msInWeek) {
                 mAdapter.getAgcInformation(mMeasurementsNotify, msInWeek);
             }
@@ -3601,7 +3602,8 @@ GnssAdapter::reportGnssMeasurementDataEvent(const GnssMeasurementsNotification& 
         }
     };
 
-    sendMsg(new MsgReportGnssMeasurementData(*this, measurements, msInWeek));
+    sendMsg(new MsgReportGnssMeasurementData(*this, gnssMeasurements, msInWeek));
+    mEngHubProxy->gnssReportSvMeasurement(gnssMeasurements.gnssSvMeasurementSet);
 }
 
 void
@@ -3612,13 +3614,6 @@ GnssAdapter::reportGnssMeasurementData(const GnssMeasurementsNotification& measu
             it->second.gnssMeasurementsCb(measurements);
         }
     }
-}
-
-void
-GnssAdapter::reportSvMeasurementEvent(GnssSvMeasurementSet &svMeasurementSet)
-{
-    LOC_LOGD("%s]: ", __func__);
-    mEngHubProxy->gnssReportSvMeasurement(svMeasurementSet);
 }
 
 void
