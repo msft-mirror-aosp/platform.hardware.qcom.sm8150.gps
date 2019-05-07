@@ -36,7 +36,7 @@
 
 #include "LocationUtil.h"
 #include "GnssAPIClient.h"
-#include <LocDualContext.h>
+#include <LocContext.h>
 
 namespace android {
 namespace hardware {
@@ -121,9 +121,9 @@ void GnssAPIClient::setCallbacks()
     locationCallbacks.gnssNiCb = nullptr;
     if (mGnssNiCbIface != nullptr) {
         loc_core::ContextBase* context =
-                loc_core::LocDualContext::getLocFgContext(
+                loc_core::LocContext::getLocContext(
                         NULL, NULL,
-                        loc_core::LocDualContext::mLocationHalName, false);
+                        loc_core::LocContext::mLocationHalName, false);
         if (!context->hasAgpsExtendedCapabilities()) {
             LOC_LOGD("Registering NI CB");
             locationCallbacks.gnssNiCb = [this](uint32_t id, GnssNiNotification gnssNiNotification) {
