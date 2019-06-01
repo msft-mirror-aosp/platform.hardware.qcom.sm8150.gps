@@ -165,8 +165,10 @@ class GnssAdapter : public LocAdapterBase {
 
     /* ==== NFW =========================================================================== */
     NfwStatusCb mNfwCb;
+    IsInEmergencySession mIsE911Session;
     inline void initNfw(const NfwCbInfo& cbInfo) {
         mNfwCb = (NfwStatusCb)cbInfo.visibilityControlCb;
+        mIsE911Session = (IsInEmergencySession)cbInfo.isInEmergencySession;
     }
 
     /* ==== ODCPI ========================================================================== */
@@ -394,6 +396,12 @@ public:
             mNfwCb(notification);
         }
     }
+    inline bool getE911State(void) {
+        if (NULL != mIsE911Session) {
+            return mIsE911Session();
+        }
+        return false;
+    }
 
     /*======== GNSSDEBUG ================================================================*/
     bool getDebugReport(GnssDebugReport& report);
@@ -428,6 +436,8 @@ public:
             GnssSvId initialSvId, GnssSvType svType);
 
     void injectLocationCommand(double latitude, double longitude, float accuracy);
+    void injectLocationExtCommand(const GnssLocationInfoNotification &locationInfo);
+
     void injectTimeCommand(int64_t time, int64_t timeReference, int32_t uncertainty);
     void blockCPICommand(double latitude, double longitude, float accuracy,
                          int blockDurationMsec, double latLonDiffThreshold);
