@@ -94,7 +94,8 @@ GnssAdapter::GnssAdapter() :
     mPowerOn(false),
     mAllowFlpNetworkFixes(0),
     mGnssEnergyConsumedCb(nullptr),
-    mPowerStateCb(nullptr)
+    mPowerStateCb(nullptr),
+    mIsE911Session(NULL)
 {
     LOC_LOGD("%s]: Constructor %p", __func__, this);
     mLocPositionMode.mode = LOC_POSITION_MODE_INVALID;
@@ -303,11 +304,11 @@ GnssAdapter::convertLocationInfo(GnssLocationInfoNotification& out,
     }
     if (GPS_LOCATION_EXTENDED_HAS_NORTH_STD_DEV & locationExtended.flags) {
         out.flags |= GNSS_LOCATION_INFO_NORTH_STD_DEV_BIT;
-        out.northVelocityStdDeviation = locationExtended.northStdDeviation;
+        out.northStdDeviation = locationExtended.northStdDeviation;
     }
     if (GPS_LOCATION_EXTENDED_HAS_EAST_STD_DEV & locationExtended.flags) {
         out.flags |= GNSS_LOCATION_INFO_EAST_STD_DEV_BIT;
-        out.eastVelocityStdDeviation = locationExtended.eastStdDeviation;
+        out.eastStdDeviation = locationExtended.eastStdDeviation;
     }
     if (GPS_LOCATION_EXTENDED_HAS_NORTH_VEL & locationExtended.flags) {
         out.flags |= GNSS_LOCATION_INFO_NORTH_VEL_BIT;
@@ -687,7 +688,8 @@ GnssAdapter::setConfigCommand()
                 if (gpsConf.AGPS_CONFIG_INJECT) {
                     gnssConfigRequested.flags |= GNSS_CONFIG_FLAGS_SET_ASSISTANCE_DATA_VALID_BIT |
                             GNSS_CONFIG_FLAGS_SUPL_VERSION_VALID_BIT |
-                            GNSS_CONFIG_FLAGS_AGLONASS_POSITION_PROTOCOL_VALID_BIT;
+                            GNSS_CONFIG_FLAGS_AGLONASS_POSITION_PROTOCOL_VALID_BIT |
+                            GNSS_CONFIG_FLAGS_LPP_PROFILE_VALID_BIT;
                     gnssConfigRequested.suplVersion =
                             adapter.mLocApi->convertSuplVersion(gpsConf.SUPL_VER);
                     gnssConfigRequested.lppProfile =
@@ -1837,6 +1839,33 @@ GnssAdapter::injectLocationCommand(double latitude, double longitude, float accu
 
     sendMsg(new MsgInjectLocation(*mLocApi, *mContext, mBlockCPIInfo,
                                   latitude, longitude, accuracy));
+}
+
+void
+GnssAdapter::injectLocationExtCommand(const GnssLocationInfoNotification &locationInfo)
+{
+    LOC_LOGd("latitude %8.4f longitude %8.4f accuracy %8.4f, tech mask 0x%x",
+             locationInfo.location.latitude, locationInfo.location.longitude,
+             locationInfo.location.accuracy, locationInfo.location.techMask);
+
+    struct MsgInjectLocationExt : public LocMsg {
+        LocApiBase& mApi;
+        ContextBase& mContext;
+        GnssLocationInfoNotification mLocationInfo;
+        inline MsgInjectLocationExt(LocApiBase& api,
+                                    ContextBase& context,
+                                    GnssLocationInfoNotification locationInfo) :
+            LocMsg(),
+            mApi(api),
+            mContext(context),
+            mLocationInfo(locationInfo) {}
+        inline virtual void proc() const {
+            // false to indicate for none-ODCPI
+            mApi.injectPosition(mLocationInfo, false);
+        }
+    };
+
+    sendMsg(new MsgInjectLocationExt(*mLocApi, *mContext, locationInfo));
 }
 
 void
@@ -3388,21 +3417,36 @@ GnssAdapter::requestNiNotifyEvent(const GnssNiNotification &notify, const void* 
 
     struct MsgReportNiNotify : public LocMsg {
         GnssAdapter& mAdapter;
+        LocApiBase& mApi;
         const GnssNiNotification mNotify;
         const void* mData;
         inline MsgReportNiNotify(GnssAdapter& adapter,
+                                 LocApiBase& api,
                                  const GnssNiNotification& notify,
                                  const void* data) :
             LocMsg(),
             mAdapter(adapter),
+            mApi(api),
             mNotify(notify),
             mData(data) {}
         inline virtual void proc() const {
-            mAdapter.requestNiNotify(mNotify, mData);
+            if (GNSS_NI_TYPE_EMERGENCY_SUPL == mNotify.type ||
+                GNSS_NI_TYPE_CONTROL_PLANE == mNotify.type) {
+                if (mAdapter.getE911State() ||
+                    ((GNSS_CONFIG_SUPL_EMERGENCY_SERVICES_NO == ContextBase::mGps_conf.SUPL_ES) &&
+                     (GNSS_NI_TYPE_EMERGENCY_SUPL == mNotify.type))) {
+                    mApi.informNiResponse(GNSS_NI_RESPONSE_ACCEPT, mData);
+                }
+                else {
+                    mApi.informNiResponse(GNSS_NI_RESPONSE_DENY, mData);
+                }
+            } else {
+                mAdapter.requestNiNotify(mNotify, mData);
+            }
         }
     };
 
-    sendMsg(new MsgReportNiNotify(*this, notify, data));
+    sendMsg(new MsgReportNiNotify(*this, *mLocApi, notify, data));
 
     return true;
 }
