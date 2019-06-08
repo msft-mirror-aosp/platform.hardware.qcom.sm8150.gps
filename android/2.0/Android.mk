@@ -64,6 +64,7 @@ include $(BUILD_SHARED_LIBRARY)
 include $(CLEAR_VARS)
 ifneq ($(wildcard vendor/qcom),)
 LOCAL_MODULE := android.hardware.gnss@2.0-service-qti
+LOCAL_VINTF_FRAGMENTS := android.hardware.gnss@2.0-service-qti.xml
 LOCAL_VENDOR_MODULE := true
 LOCAL_MODULE_RELATIVE_PATH := hw
 LOCAL_INIT_RC := android.hardware.gnss@2.0-service-qti.rc
