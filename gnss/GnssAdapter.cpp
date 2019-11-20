@@ -656,17 +656,15 @@ GnssAdapter::setSuplHostServer(const char* server, int port, LocServerType type)
         }
         if (LOC_AGPS_SUPL_SERVER != type && LOC_AGPS_MO_SUPL_SERVER != type) {
             LOC_LOGe("Invalid type=%d", type);
-        } else {
-            string& url = (LOC_AGPS_SUPL_SERVER == type) ? getServerUrl() : getMoServerUrl();
-            if (length >= 0 && strncasecmp(url.c_str(), serverUrl, sizeof(serverUrl)) != 0) {
-                url.assign(serverUrl);
-
-                if (LOC_AGPS_SUPL_SERVER == type) {
-                    strlcpy(ContextBase::mGps_conf.SUPL_HOST, server, LOC_MAX_PARAM_STRING);
-                    ContextBase::mGps_conf.SUPL_PORT = port;
+        } else if (length >= 0) {
+            if (LOC_AGPS_SUPL_SERVER == type) {
+                getServerUrl().assign(serverUrl);
+                strlcpy(ContextBase::mGps_conf.SUPL_HOST, server, LOC_MAX_PARAM_STRING);
+                ContextBase::mGps_conf.SUPL_PORT = port;
+            } else {
+                if (strncasecmp(getMoServerUrl().c_str(), serverUrl, sizeof(serverUrl)) != 0) {
+                    getMoServerUrl().assign(serverUrl);
                 }
-
-                LOC_LOGv("serverUrl=%s length=%d type=%d", serverUrl, length, type);
             }
         }
     }
@@ -699,7 +697,6 @@ GnssAdapter::setConfigCommand()
             }
             mAdapter.mNmeaMask= mask;
 
-            std::string oldServerUrl = mAdapter.getServerUrl();
             std::string oldMoServerUrl = mAdapter.getMoServerUrl();
             mAdapter.setSuplHostServer(ContextBase::mGps_conf.SUPL_HOST,
                                        ContextBase::mGps_conf.SUPL_PORT,
@@ -743,10 +740,8 @@ GnssAdapter::setConfigCommand()
            gnssConfigRequested.blacklistedSvIds.assign(adapter.mBlacklistedSvIds.begin(),
                                                        adapter.mBlacklistedSvIds.end());
            mApi.sendMsg(new LocApiMsg(
-                   [&adapter, gpsConf, sapConf, oldServerUrl,
-                    oldMoServerUrl, gnssConfigRequested] () {
-               adapter.gnssUpdateConfig(oldServerUrl, oldMoServerUrl, gnssConfigRequested,
-                       gnssConfigRequested);
+                   [&adapter, gpsConf, sapConf, oldMoServerUrl, gnssConfigRequested] () {
+               adapter.gnssUpdateConfig(oldMoServerUrl, gnssConfigRequested, gnssConfigRequested);
 
                // set nmea mask type
                uint32_t mask = 0;
@@ -805,8 +800,8 @@ GnssAdapter::setConfigCommand()
     sendMsg(new MsgSetConfig(*this, *mLocApi));
 }
 
-std::vector<LocationError> GnssAdapter::gnssUpdateConfig(const std::string& oldServerUrl,
-        const std::string& oldMoServerUrl, const GnssConfig& gnssConfigRequested,
+std::vector<LocationError> GnssAdapter::gnssUpdateConfig(const std::string& oldMoServerUrl,
+        const GnssConfig& gnssConfigRequested,
         const GnssConfig& gnssConfigNeedEngineUpdate, size_t count) {
     loc_gps_cfg_s gpsConf = ContextBase::mGps_conf;
     size_t index = 0;
@@ -839,13 +834,10 @@ std::vector<LocationError> GnssAdapter::gnssUpdateConfig(const std::string& oldS
                 GNSS_CONFIG_FLAGS_SET_ASSISTANCE_DATA_VALID_BIT) {
             if (gnssConfigNeedEngineUpdate.assistanceServer.type ==
                     GNSS_ASSISTANCE_TYPE_SUPL) {
-                if (0 != oldServerUrl.compare(serverUrl)) {
-
-                    err = mLocApi->setServerSync(
-                            serverUrl.c_str(), serverUrlLen, LOC_AGPS_SUPL_SERVER);
-                    if (index < count) {
-                        errsList[index] = err;
-                    }
+                err = mLocApi->setServerSync(
+                        serverUrl.c_str(), serverUrlLen, LOC_AGPS_SUPL_SERVER);
+                if (index < count) {
+                    errsList[index] = err;
                 }
                 if (0 != oldMoServerUrl.compare(moServerUrl)) {
                     LocationError locErr =
@@ -1063,7 +1055,6 @@ GnssAdapter::gnssUpdateConfigCommand(GnssConfig config)
             size_t countOfConfigs = mCount;
             GnssConfig gnssConfigRequested = mConfig;
             GnssConfig gnssConfigNeedEngineUpdate = mConfig;
-            std::string oldServerUrl = mAdapter.getServerUrl();
 
             std::vector<uint32_t> sessionIds;
             sessionIds.assign(mIds, mIds + mCount);
@@ -1085,12 +1076,7 @@ GnssAdapter::gnssUpdateConfigCommand(GnssConfig config)
             if (gnssConfigRequested.flags & GNSS_CONFIG_FLAGS_SUPL_VERSION_VALID_BIT) {
                 uint32_t newSuplVersion =
                         mAdapter.convertSuplVersion(gnssConfigRequested.suplVersion);
-                if (newSuplVersion != ContextBase::mGps_conf.SUPL_VER &&
-                    ContextBase::mGps_conf.AGPS_CONFIG_INJECT) {
-                    ContextBase::mGps_conf.SUPL_VER = newSuplVersion;
-                } else {
-                    gnssConfigNeedEngineUpdate.flags &= ~(GNSS_CONFIG_FLAGS_SUPL_VERSION_VALID_BIT);
-                }
+                ContextBase::mGps_conf.SUPL_VER = newSuplVersion;
                 index++;
             }
             if (gnssConfigRequested.flags & GNSS_CONFIG_FLAGS_SET_ASSISTANCE_DATA_VALID_BIT) {
@@ -1109,47 +1095,26 @@ GnssAdapter::gnssUpdateConfigCommand(GnssConfig config)
             }
             if (gnssConfigRequested.flags & GNSS_CONFIG_FLAGS_LPP_PROFILE_VALID_BIT) {
                 uint32_t newLppProfile = mAdapter.convertLppProfile(gnssConfigRequested.lppProfile);
-                if (newLppProfile != ContextBase::mGps_conf.LPP_PROFILE &&
-                    ContextBase::mGps_conf.AGPS_CONFIG_INJECT) {
-                    ContextBase::mGps_conf.LPP_PROFILE = newLppProfile;
-                } else {
-                    gnssConfigNeedEngineUpdate.flags &= ~(GNSS_CONFIG_FLAGS_LPP_PROFILE_VALID_BIT);
-                }
+                ContextBase::mGps_conf.LPP_PROFILE = newLppProfile;
                 index++;
             }
             if (gnssConfigRequested.flags & GNSS_CONFIG_FLAGS_LPPE_CONTROL_PLANE_VALID_BIT) {
                 uint32_t newLppeControlPlaneMask =
-                    mAdapter.convertLppeCp(gnssConfigRequested.lppeControlPlaneMask);
-                if (newLppeControlPlaneMask != ContextBase::mGps_conf.LPPE_CP_TECHNOLOGY) {
-                    ContextBase::mGps_conf.LPPE_CP_TECHNOLOGY = newLppeControlPlaneMask;
-                } else {
-                    gnssConfigNeedEngineUpdate.flags &=
-                            ~(GNSS_CONFIG_FLAGS_LPPE_CONTROL_PLANE_VALID_BIT);
-                }
+                        mAdapter.convertLppeCp(gnssConfigRequested.lppeControlPlaneMask);
+                ContextBase::mGps_conf.LPPE_CP_TECHNOLOGY = newLppeControlPlaneMask;
                 index++;
             }
             if (gnssConfigRequested.flags & GNSS_CONFIG_FLAGS_LPPE_USER_PLANE_VALID_BIT) {
                 uint32_t newLppeUserPlaneMask =
-                    mAdapter.convertLppeUp(gnssConfigRequested.lppeUserPlaneMask);
-                if (newLppeUserPlaneMask != ContextBase::mGps_conf.LPPE_UP_TECHNOLOGY) {
-                    ContextBase::mGps_conf.LPPE_UP_TECHNOLOGY = newLppeUserPlaneMask;
-                } else {
-                    gnssConfigNeedEngineUpdate.flags &=
-                            ~(GNSS_CONFIG_FLAGS_LPPE_USER_PLANE_VALID_BIT);
-                }
+                        mAdapter.convertLppeUp(gnssConfigRequested.lppeUserPlaneMask);
+                ContextBase::mGps_conf.LPPE_UP_TECHNOLOGY = newLppeUserPlaneMask;
                 index++;
             }
             if (gnssConfigRequested.flags &
                     GNSS_CONFIG_FLAGS_AGLONASS_POSITION_PROTOCOL_VALID_BIT) {
                 uint32_t newAGloProtMask =
-                    mAdapter.convertAGloProt(gnssConfigRequested.aGlonassPositionProtocolMask);
-                if (newAGloProtMask != ContextBase::mGps_conf.A_GLONASS_POS_PROTOCOL_SELECT &&
-                    ContextBase::mGps_conf.AGPS_CONFIG_INJECT) {
-                    ContextBase::mGps_conf.A_GLONASS_POS_PROTOCOL_SELECT = newAGloProtMask;
-                } else {
-                    gnssConfigNeedEngineUpdate.flags &=
-                            ~(GNSS_CONFIG_FLAGS_AGLONASS_POSITION_PROTOCOL_VALID_BIT);
-                }
+                        mAdapter.convertAGloProt(gnssConfigRequested.aGlonassPositionProtocolMask);
+                ContextBase::mGps_conf.A_GLONASS_POS_PROTOCOL_SELECT = newAGloProtMask;
                 index++;
             }
             if (gnssConfigRequested.flags & GNSS_CONFIG_FLAGS_EM_PDN_FOR_EM_SUPL_VALID_BIT) {
@@ -1170,10 +1135,8 @@ GnssAdapter::gnssUpdateConfigCommand(GnssConfig config)
             }
             if (gnssConfigRequested.flags & GNSS_CONFIG_FLAGS_SUPL_MODE_BIT) {
                 uint32_t newSuplMode = mAdapter.convertSuplMode(gnssConfigRequested.suplModeMask);
-                if (newSuplMode != ContextBase::mGps_conf.SUPL_MODE) {
-                    ContextBase::mGps_conf.SUPL_MODE = newSuplMode;
-                    mAdapter.broadcastCapabilities(mAdapter.getCapabilities());
-                }
+                ContextBase::mGps_conf.SUPL_MODE = newSuplMode;
+                mAdapter.broadcastCapabilities(mAdapter.getCapabilities());
                 index++;
             }
 
@@ -1187,11 +1150,9 @@ GnssAdapter::gnssUpdateConfigCommand(GnssConfig config)
 
             mApi.sendMsg(new LocApiMsg(
                     [&adapter, gnssConfigRequested, gnssConfigNeedEngineUpdate,
-                    countOfConfigs, configCollectiveResponse, errs, oldServerUrl] () {
-                std::string serverUrl = adapter.getServerUrl();
-                int serverUrlLen = serverUrl.length();
-                std::vector<LocationError> errsList = adapter.gnssUpdateConfig(oldServerUrl,
-                        "", gnssConfigRequested, gnssConfigNeedEngineUpdate, countOfConfigs);
+                    countOfConfigs, configCollectiveResponse, errs] () {
+                std::vector<LocationError> errsList = adapter.gnssUpdateConfig("",
+                        gnssConfigRequested, gnssConfigNeedEngineUpdate, countOfConfigs);
 
                 configCollectiveResponse->returnToSender(errsList);
             }));
