@@ -138,6 +138,8 @@ class GnssAdapter : public LocAdapterBase {
 
     /* ==== Engine Hub ===================================================================== */
     EngineHubProxyBase* mEngHubProxy;
+    bool mNHzNeeded;
+    bool mSPEAlreadyRunningAtHighestInterval;
 
     /* ==== TRACKING ======================================================================= */
     TrackingOptionsMap mTimeBasedTrackingSessions;
@@ -150,11 +152,12 @@ class GnssAdapter : public LocAdapterBase {
 
     /* ==== CONTROL ======================================================================== */
     LocationControlCallbacks mControlCallbacks;
-    uint32_t mPowerVoteId;
+    uint32_t mAfwControlId;
     uint32_t mNmeaMask;
     GnssSvIdConfig mGnssSvIdConfig;
     GnssSvTypeConfig mGnssSvTypeConfig;
     GnssSvTypeConfigCallback mGnssSvTypeConfigCb;
+    bool mSupportNfwControl;
 
     /* ==== NI ============================================================================= */
     NiData mNiData;
@@ -162,7 +165,6 @@ class GnssAdapter : public LocAdapterBase {
     /* ==== AGPS =========================================================================== */
     // This must be initialized via initAgps()
     AgpsManager mAgpsManager;
-    AgpsCbInfo mAgpsCbInfo;
     void initAgps(const AgpsCbInfo& cbInfo);
 
     /* ==== NFW =========================================================================== */
@@ -187,6 +189,7 @@ class GnssAdapter : public LocAdapterBase {
     XtraSystemStatusObserver mXtraObserver;
     LocationSystemInfo mLocSystemInfo;
     std::vector<GnssSvIdSource> mBlacklistedSvIds;
+    PowerStateType mSystemPowerState;
 
     /* === Misc ===================================================================== */
     BlockCPIInfo mBlockCPIInfo;
@@ -228,6 +231,7 @@ public:
     virtual void handleEngineUpEvent();
     /* ======== UTILITIES ================================================================== */
     void restartSessions();
+    void checkAndRestartTimeBasedSession();
 
     /* ==== CLIENT ========================================================================= */
     /* ======== COMMANDS ====(Called from Client Thread)==================================== */
@@ -243,10 +247,9 @@ public:
     /* ======== RESPONSES ================================================================== */
     void reportResponse(LocationAPI* client, LocationError err, uint32_t sessionId);
     /* ======== UTILITIES ================================================================== */
-    bool hasTrackingCallback(LocationAPI* client);
     bool isTimeBasedTrackingSession(LocationAPI* client, uint32_t sessionId);
     bool isDistanceBasedTrackingSession(LocationAPI* client, uint32_t sessionId);
-    bool hasMeasurementsCallback(LocationAPI* client);
+    bool hasCallbacksToStartTracking(LocationAPI* client);
     bool isTrackingSession(LocationAPI* client, uint32_t sessionId);
     void saveTrackingSession(LocationAPI* client, uint32_t sessionId,
                              const TrackingOptions& trackingOptions);
@@ -265,6 +268,7 @@ public:
             const TrackingOptions& trackingOptions);
     void updateTracking(LocationAPI* client, uint32_t sessionId,
             const TrackingOptions& updatedOptions, const TrackingOptions& oldOptions);
+    bool checkAndSetSPEToRunforNHz(TrackingOptions & out);
 
     /* ==== NI ============================================================================= */
     /* ======== COMMANDS ====(Called from Client Thread)==================================== */
@@ -281,7 +285,6 @@ public:
     void disableCommand(uint32_t id);
     void setControlCallbacksCommand(LocationControlCallbacks& controlCallbacks);
     void readConfigCommand();
-    void setConfigCommand();
     void requestUlpCommand();
     void initEngHubProxyCommand();
     uint32_t* gnssUpdateConfigCommand(GnssConfig config);
@@ -313,6 +316,7 @@ public:
     { mGnssSvTypeConfigCb = callback; }
     inline GnssSvTypeConfigCallback gnssGetSvTypeConfigCallback()
     { return mGnssSvTypeConfigCb; }
+    void setConfig();
 
     /* ========= AGPS ====================================================================== */
     /* ======== COMMANDS ====(Called from Client Thread)==================================== */
@@ -337,8 +341,8 @@ public:
     LocationControlCallbacks& getControlCallbacks() { return mControlCallbacks; }
     void setControlCallbacks(const LocationControlCallbacks& controlCallbacks)
     { mControlCallbacks = controlCallbacks; }
-    void setAfwControlId(uint32_t id) { mPowerVoteId = id; }
-    uint32_t getAfwControlId() { return mPowerVoteId; }
+    void setAfwControlId(uint32_t id) { mAfwControlId = id; }
+    uint32_t getAfwControlId() { return mAfwControlId; }
     virtual bool isInSession() { return !mTimeBasedTrackingSessions.empty(); }
     void initDefaultAgps();
     bool initEngHubProxy();
@@ -350,14 +354,17 @@ public:
                                      const GpsLocationExtended& locationExtended,
                                      enum loc_sess_status status,
                                      LocPosTechMask techMask,
-                                     bool fromEngineHub = false,
                                      GnssDataNotification* pDataNotify = nullptr,
                                      int msInWeek = -1);
+    virtual void reportEnginePositionsEvent(unsigned int count,
+                                            EngineLocationInfo* locationArr);
+
     virtual void reportSvEvent(const GnssSvNotification& svNotify,
                                bool fromEngineHub=false);
     virtual void reportNmeaEvent(const char* nmea, size_t length);
     virtual void reportDataEvent(const GnssDataNotification& dataNotify, int msInWeek);
-    virtual bool requestNiNotifyEvent(const GnssNiNotification& notify, const void* data);
+    virtual bool requestNiNotifyEvent(const GnssNiNotification& notify, const void* data,
+                                      const LocInEmergency emergencyState);
     virtual void reportGnssMeasurementsEvent(const GnssMeasurements& gnssMeasurements,
                                                 int msInWeek);
     virtual void reportSvPolynomialEvent(GnssSvPolynomial &svPolynomial);
@@ -384,10 +391,13 @@ public:
                         const GpsLocationExtended &locationExtended,
                         enum loc_sess_status status,
                         LocPosTechMask techMask);
+    void reportEnginePositions(unsigned int count,
+                               const EngineLocationInfo* locationArr);
     void reportSv(GnssSvNotification& svNotify);
     void reportNmea(const char* nmea, size_t length);
     void reportData(GnssDataNotification& dataNotify);
-    bool requestNiNotify(const GnssNiNotification& notify, const void* data);
+    bool requestNiNotify(const GnssNiNotification& notify, const void* data,
+                         const bool bInformNiAccept);
     void reportGnssMeasurementData(const GnssMeasurementsNotification& measurements);
     void reportGnssSvIdConfig(const GnssSvIdConfig& config);
     void reportGnssSvTypeConfig(const GnssSvTypeConfig& config);
@@ -406,6 +416,8 @@ public:
         }
         return false;
     }
+
+    void updateSystemPowerState(PowerStateType systemPowerState);
 
     /*======== GNSSDEBUG ================================================================*/
     bool getDebugReport(GnssDebugReport& report);
@@ -453,11 +465,14 @@ public:
     void reportPowerStateIfChanged();
     void savePowerStateCallback(powerStateCallback powerStateCb){ mPowerStateCb = powerStateCb; }
     bool getPowerState() { return mPowerOn; }
+    inline PowerStateType getSystemPowerState() { return mSystemPowerState; }
+
     void setAllowFlpNetworkFixes(uint32_t allow) { mAllowFlpNetworkFixes = allow; }
     uint32_t getAllowFlpNetworkFixes() { return mAllowFlpNetworkFixes; }
     void setSuplHostServer(const char* server, int port, LocServerType type);
     void notifyClientOfCachedLocationSystemInfo(LocationAPI* client,
                                                 const LocationCallbacks& callbacks);
+    void updateSystemPowerStateCommand(PowerStateType systemPowerState);
 };
 
 #endif //GNSS_ADAPTER_H
