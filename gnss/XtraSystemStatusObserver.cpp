@@ -65,7 +65,8 @@ public:
     inline XtraIpcListener(IOsObserver* observer, const MsgTask* msgTask,
                            XtraSystemStatusObserver& xsso) :
             mSystemStatusObsrvr(observer), mMsgTask(msgTask), mXSSO(xsso) {}
-    virtual void onReceive(const char* data, uint32_t length) override {
+    virtual void onReceive(const char* data, uint32_t length,
+                           const LocIpcRecver* recver) override {
 #define STRNCMP(str, constStr) strncmp(str, constStr, sizeof(constStr)-1)
         if (!STRNCMP(data, "ping")) {
             LOC_LOGd("ping received");
@@ -123,7 +124,7 @@ bool XtraSystemStatusObserver::updateLockStatus(GnssConfigGpsLock lock) {
 
     stringstream ss;
     ss <<  "gpslock";
-    ss << " " << lock;
+    ss << " " << mGpsLock;
     string s = ss.str();
     return ( LocIpc::send(*mSender, (const uint8_t*)s.data(), s.size()) );
 }

@@ -223,7 +223,6 @@ bool GnssAPIClient::gnssSetPositionMode(IGnss::GnssPositionMode mode,
         // For MSA, we always treat it as SINGLE mode.
         mTrackingOptions.minInterval = SINGLE_SHOT_MIN_TRACKING_INTERVAL_MSEC;
     }
-    mTrackingOptions.minDistance = preferredAccuracyMeters;
     if (mode == IGnss::GnssPositionMode::STANDALONE)
         mTrackingOptions.mode = GNSS_SUPL_MODE_STANDALONE;
     else if (mode == IGnss::GnssPositionMode::MS_BASED)
@@ -279,7 +278,9 @@ void GnssAPIClient::gnssDeleteAidingData(IGnss::GnssAidingData aidingDataFlags)
         GNSS_AIDING_DATA_SV_TYPE_GLONASS_BIT |
         GNSS_AIDING_DATA_SV_TYPE_QZSS_BIT |
         GNSS_AIDING_DATA_SV_TYPE_BEIDOU_BIT |
-        GNSS_AIDING_DATA_SV_TYPE_GALILEO_BIT;
+        GNSS_AIDING_DATA_SV_TYPE_GALILEO_BIT |
+        GNSS_AIDING_DATA_SV_TYPE_NAVIC_BIT;
+    data.posEngineMask = STANDARD_POSITIONING_ENGINE;
 
     if (aidingDataFlags == IGnss::GnssAidingData::DELETE_ALL)
         data.deleteAll = true;
@@ -535,7 +536,7 @@ void GnssAPIClient::onGnssNiCb(uint32_t id, GnssNiNotification gnssNiNotificatio
 
 void GnssAPIClient::onGnssSvCb(GnssSvNotification gnssSvNotification)
 {
-    LOC_LOGD("%s]: (count: %zu)", __FUNCTION__, gnssSvNotification.count);
+    LOC_LOGD("%s]: (count: %u)", __FUNCTION__, gnssSvNotification.count);
     mMutex.lock();
     auto gnssCbIface(mGnssCbIface);
     auto gnssCbIface_2_0(mGnssCbIface_2_0);
@@ -579,7 +580,7 @@ void GnssAPIClient::onGnssNmeaCb(GnssNmeaNotification gnssNmeaNotification)
                 auto r = gnssCbIface_2_0->gnssNmeaCb(
                         static_cast<V1_0::GnssUtcTime>(gnssNmeaNotification.timestamp), nmeaString);
                 if (!r.isOk()) {
-                    LOC_LOGE("%s] Error from gnssCbIface_2_0 nmea=%s length=%zu description=%s",
+                    LOC_LOGE("%s] Error from gnssCbIface_2_0 nmea=%s length=%u description=%s",
                              __func__, gnssNmeaNotification.nmea, gnssNmeaNotification.length,
                              r.description().c_str());
                 }
@@ -587,7 +588,7 @@ void GnssAPIClient::onGnssNmeaCb(GnssNmeaNotification gnssNmeaNotification)
                 auto r = gnssCbIface->gnssNmeaCb(
                         static_cast<V1_0::GnssUtcTime>(gnssNmeaNotification.timestamp), nmeaString);
                 if (!r.isOk()) {
-                    LOC_LOGE("%s] Error from gnssNmeaCb nmea=%s length=%zu description=%s",
+                    LOC_LOGE("%s] Error from gnssNmeaCb nmea=%s length=%u description=%s",
                              __func__, gnssNmeaNotification.nmea, gnssNmeaNotification.length,
                              r.description().c_str());
                 }
