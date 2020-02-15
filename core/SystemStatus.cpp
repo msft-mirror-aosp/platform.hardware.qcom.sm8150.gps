@@ -158,6 +158,7 @@ private:
         eAgcGlo = 20,
         eAgcBds = 21,
         eAgcGal = 22,
+        eMax0 = eAgcGal,
         eLeapSeconds = 23,
         eLeapSecUnc = 24,
         eGloBpAmpI = 25,
@@ -166,7 +167,6 @@ private:
         eBdsBpAmpQ = 28,
         eGalBpAmpI = 29,
         eGalBpAmpQ = 30,
-        eMax0 = eGalBpAmpQ,
         eTimeUncNs = 31,
         eMax
     };
@@ -1731,5 +1731,18 @@ bool SystemStatus::eventConnectionStatus(bool connected, int8_t type,
     return true;
 }
 
+/******************************************************************************
+@brief      API to update power connect state
+
+@param[In]  power connect status
+
+@return     true when successfully done
+******************************************************************************/
+bool SystemStatus::updatePowerConnectState(bool charging)
+{
+    SystemStatusPowerConnectState s(charging);
+    mSysStatusObsvr.notify({&s});
+    return true;
+}
 } // namespace loc_core
 
