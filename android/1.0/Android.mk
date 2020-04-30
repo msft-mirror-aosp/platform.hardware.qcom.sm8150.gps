@@ -1,3 +1,5 @@
+ifeq ($(GNSS_HIDL_VERSION),1.0)
+
 LOCAL_PATH := $(call my-dir)
 
 include $(CLEAR_VARS)
@@ -97,3 +99,5 @@ LOCAL_CFLAGS += -DLOC_HIDL_VERSION='"$(LOC_HIDL_VERSION)"'
 endif
 
 include $(BUILD_EXECUTABLE)
+
+endif #ifeq ($(GNSS_HIDL_VERSION),1.0)
