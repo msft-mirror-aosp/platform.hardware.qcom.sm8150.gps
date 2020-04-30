@@ -1,3 +1,4 @@
+ifeq ($(GNSS_HIDL_VERSION),2.0)
 LOCAL_PATH := $(call my-dir)
 
 include $(CLEAR_VARS)
@@ -112,3 +113,5 @@ endif
 
 include $(BUILD_EXECUTABLE)
 endif
+
+endif #ifeq ($(GNSS_HIDL_VERSION),2.0)
