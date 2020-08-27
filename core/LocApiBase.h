@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2014, 2016-2019 The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2014, 2016-2020 The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -34,6 +34,7 @@
 #include <gps_extended.h>
 #include <LocationAPI.h>
 #include <MsgTask.h>
+#include <LocSharedLock.h>
 #include <log_util.h>
 
 namespace loc_core {
@@ -107,6 +108,7 @@ class LocApiBase {
     friend struct LocKillMsg;
     friend class ContextBase;
     static MsgTask* mMsgTask;
+    static volatile int32_t mMsgTaskRefCount;
     LocAdapterBase* mLocAdapters[MAX_ADAPTERS];
 
 protected:
@@ -121,7 +123,8 @@ protected:
     LocApiBase(LOC_API_ADAPTER_EVENT_MASK_T excludedMask,
                ContextBase* context = NULL);
     inline virtual ~LocApiBase() {
-        if (nullptr != mMsgTask) {
+        android_atomic_dec(&mMsgTaskRefCount);
+        if (nullptr != mMsgTask && 0 == mMsgTaskRefCount) {
             mMsgTask->destroy();
             mMsgTask = nullptr;
         }
@@ -132,7 +135,9 @@ protected:
 
 public:
     inline void sendMsg(const LocMsg* msg) const {
-        mMsgTask->sendMsg(msg);
+        if (nullptr != mMsgTask) {
+            mMsgTask->sendMsg(msg);
+        }
     }
     inline void destroy() {
         close();
@@ -177,7 +182,8 @@ public:
     void requestLocation();
     void requestATL(int connHandle, LocAGpsType agps_type, LocApnTypeMask apn_type_mask);
     void releaseATL(int connHandle);
-    void requestNiNotify(GnssNiNotification &notify, const void* data);
+    void requestNiNotify(GnssNiNotification &notify, const void* data,
+                         const LocInEmergency emergencyState);
     void reportGnssMeasurements(GnssMeasurements& gnssMeasurements, int msInWeek);
     void reportWwanZppFix(LocGpsLocation &zppLoc);
     void reportZppBestAvailableFix(LocGpsLocation &zppLoc, GpsLocationExtended &location_extended,
@@ -254,12 +260,17 @@ public:
     virtual LocationError setBlacklistSvSync(const GnssSvIdConfig& config);
     virtual void setBlacklistSv(const GnssSvIdConfig& config);
     virtual void getBlacklistSv();
-    virtual void setConstellationControl(const GnssSvTypeConfig& config);
+    virtual void setConstellationControl(const GnssSvTypeConfig& config,
+                                         LocApiResponse *adapterResponse=nullptr);
     virtual void getConstellationControl();
-    virtual void resetConstellationControl();
-    virtual LocationError setConstrainedTuncMode(bool enabled, float tuncConstraint,
-            uint32_t energyBudget);
-    virtual LocationError setPositionAssistedClockEstimatorMode(bool enabled);
+    virtual void resetConstellationControl(LocApiResponse *adapterResponse=nullptr);
+
+    virtual void setConstrainedTuncMode(bool enabled,
+                                        float tuncConstraint,
+                                        uint32_t energyBudget,
+                                        LocApiResponse* adapterResponse=nullptr);
+    virtual void setPositionAssistedClockEstimatorMode(bool enabled,
+                                                       LocApiResponse* adapterResponse=nullptr);
     virtual LocationError getGnssEnergyConsumed();
 
     virtual void addGeofence(uint32_t clientId, const GeofenceOption& options,
@@ -306,6 +317,9 @@ public:
     void updateEvtMask();
     void updateNmeaMask(uint32_t mask);
 
+    virtual void updateSystemPowerState(PowerStateType systemPowerState);
+    virtual void configRobustLocation(bool enable, bool enableForE911,
+                                      LocApiResponse* adapterResponse=nullptr);
 };
 
 typedef LocApiBase* (getLocApi_t)(LOC_API_ADAPTER_EVENT_MASK_T exMask,
