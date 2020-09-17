@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
  * Not a Contribution
  */
 /*
@@ -19,6 +19,7 @@
  */
 
 #define LOG_TAG "LocSvc_GnssInterface"
+#define LOG_NDEBUG 0
 
 #include <fstream>
 #include <log_util.h>
@@ -26,6 +27,8 @@
 #include <cutils/properties.h>
 #include "Gnss.h"
 #include <LocationUtil.h>
+#include "battery_listener.h"
+#include "loc_misc_utils.h"
 
 typedef const GnssInterface* (getLocationInterface)();
 
@@ -35,6 +38,7 @@ namespace gnss {
 namespace V1_0 {
 namespace implementation {
 
+static sp<Gnss> sGnss;
 void Gnss::GnssDeathRecipient::serviceDied(uint64_t cookie, const wp<IBase>& who) {
     LOC_LOGE("%s] service died. cookie: %llu, who: %p",
             __FUNCTION__, static_cast<unsigned long long>(cookie), &who);
@@ -44,8 +48,19 @@ void Gnss::GnssDeathRecipient::serviceDied(uint64_t cookie, const wp<IBase>& who
     }
 }
 
+void location_on_battery_status_changed(bool charging) {
+    LOC_LOGd("battery status changed to %s charging", charging ? "" : "not ");
+    if (sGnss != nullptr) {
+        sGnss->getGnssInterface()->updateBatteryStatus(charging);
+    }
+}
 Gnss::Gnss() {
     ENTRY_LOG_CALLFLOW();
+    sGnss = this;
+    // initilize gnss interface at first in case needing notify battery status
+    sGnss->getGnssInterface()->initialize();
+    // register health client to listen on battery change
+    loc_extn_battery_properties_listener_init(location_on_battery_status_changed);
     // clear pending GnssConfig
     memset(&mPendingConfig, 0, sizeof(GnssConfig));
 
@@ -58,6 +73,7 @@ Gnss::~Gnss() {
         delete mApi;
         mApi = nullptr;
     }
+    sGnss = nullptr;
 }
 
 GnssAPIClient* Gnss::getApi() {
@@ -87,25 +103,14 @@ GnssAPIClient* Gnss::getApi() {
 const GnssInterface* Gnss::getGnssInterface() {
     static bool getGnssInterfaceFailed = false;
     if (nullptr == mGnssInterface && !getGnssInterfaceFailed) {
-        LOC_LOGD("%s]: loading libgnss.so::getGnssInterface ...", __func__);
-        getLocationInterface* getter = NULL;
-        const char *error = NULL;
-        dlerror();
-        void *handle = dlopen("libgnss.so", RTLD_NOW);
-        if (NULL == handle || (error = dlerror()) != NULL)  {
-            LOC_LOGW("dlopen for libgnss.so failed, error = %s", error);
-        } else {
-            getter = (getLocationInterface*)dlsym(handle, "getGnssInterface");
-            if ((error = dlerror()) != NULL)  {
-                LOC_LOGW("dlsym for libgnss.so::getGnssInterface failed, error = %s", error);
-                getter = NULL;
-            }
-        }
+        void * libHandle = nullptr;
+        getLocationInterface* getter = (getLocationInterface*)
+                dlGetSymFromLib(libHandle, "libgnss.so", "getGnssInterface");
 
-        if (NULL == getter) {
+        if (nullptr == getter) {
             getGnssInterfaceFailed = true;
         } else {
-            mGnssInterface = (const GnssInterface*)(*getter)();
+            mGnssInterface = (GnssInterface*)(*getter)();
         }
     }
     return mGnssInterface;

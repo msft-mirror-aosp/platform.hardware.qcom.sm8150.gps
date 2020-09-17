@@ -1,4 +1,4 @@
-/* Copyright (c) 2017-2018 The Linux Foundation. All rights reserved.
+/* Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -48,7 +48,7 @@ namespace loc_util {
 
 #define SOCK_OP_AND_LOG(buf, length, opable, rtv, exe)  \
     if (nullptr == (buf) || 0 == (length)) { \
-        LOC_LOGe("Invalid inputs: buf - %p, length - %d", (buf), (length)); \
+        LOC_LOGe("Invalid inputs: buf - %p, length - %u", (buf), (length)); \
     } else if (!(opable)) {                                             \
         LOC_LOGe("Invalid object: operable - %d", (opable));            \
     } else { \
@@ -60,24 +60,24 @@ namespace loc_util {
 
 const char Sock::MSG_ABORT[] = "LocIpc::Sock::ABORT";
 const char Sock::LOC_IPC_HEAD[] = "$MSGLEN$";
-ssize_t Sock::send(const void *buf, size_t len, int flags, const struct sockaddr *destAddr,
+ssize_t Sock::send(const void *buf, uint32_t len, int flags, const struct sockaddr *destAddr,
                           socklen_t addrlen) const {
     ssize_t rtv = -1;
     SOCK_OP_AND_LOG(buf, len, isValid(), rtv, sendto(buf, len, flags, destAddr, addrlen));
     return rtv;
 }
-ssize_t Sock::recv(const shared_ptr<ILocIpcListener>& dataCb, int flags, struct sockaddr *srcAddr,
-                           socklen_t *addrlen, int sid) const {
+ssize_t Sock::recv(const LocIpcRecver& recver, const shared_ptr<ILocIpcListener>& dataCb, int flags,
+                   struct sockaddr *srcAddr, socklen_t *addrlen, int sid) const {
     ssize_t rtv = -1;
     if (-1 == sid) {
         sid = mSid;
     } // else it sid would be connection based socket id for recv
     SOCK_OP_AND_LOG(dataCb.get(), mMaxTxSize, isValid(), rtv,
-                    recvfrom(dataCb, sid, flags, srcAddr, addrlen));
+                    recvfrom(recver, dataCb, sid, flags, srcAddr, addrlen));
     return rtv;
 }
 ssize_t Sock::sendto(const void *buf, size_t len, int flags, const struct sockaddr *destAddr,
-                            socklen_t addrlen) const {
+                     socklen_t addrlen) const {
     ssize_t rtv = -1;
     if (len <= mMaxTxSize) {
         rtv = ::sendto(mSid, buf, len, flags, destAddr, addrlen);
@@ -94,19 +94,18 @@ ssize_t Sock::sendto(const void *buf, size_t len, int flags, const struct sockad
     }
     return rtv;
 }
-ssize_t Sock::recvfrom(const shared_ptr<ILocIpcListener>& dataCb, int sid, int flags,
-                       struct sockaddr *srcAddr, socklen_t *addrlen) const  {
-    ssize_t nBytes = -1;
+ssize_t Sock::recvfrom(const LocIpcRecver& recver, const shared_ptr<ILocIpcListener>& dataCb,
+                       int sid, int flags, struct sockaddr *srcAddr, socklen_t *addrlen) const  {
     std::string msg(mMaxTxSize, 0);
-
-    if ((nBytes = ::recvfrom(sid, (void*)msg.data(), msg.size(), flags, srcAddr, addrlen)) > 0) {
+    ssize_t nBytes = ::recvfrom(sid, (void*)msg.data(), msg.size(), flags, srcAddr, addrlen);
+    if (nBytes > 0) {
         if (strncmp(msg.data(), MSG_ABORT, sizeof(MSG_ABORT)) == 0) {
             LOC_LOGi("recvd abort msg.data %s", msg.data());
             nBytes = 0;
         } else if (strncmp(msg.data(), LOC_IPC_HEAD, sizeof(LOC_IPC_HEAD) - 1)) {
             // short message
             msg.resize(nBytes);
-            dataCb->onReceive(msg.data(), nBytes);
+            dataCb->onReceive(msg.data(), nBytes, &recver);
         } else {
             // long message
             size_t msgLen = 0;
@@ -119,7 +118,7 @@ ssize_t Sock::recvfrom(const shared_ptr<ILocIpcListener>& dataCb, int sid, int f
             }
             if (nBytes > 0) {
                 nBytes = msgLen;
-                dataCb->onReceive(msg.data(), nBytes);
+                dataCb->onReceive(msg.data(), nBytes, &recver);
             }
         }
     }
@@ -140,8 +139,20 @@ protected:
     }
 public:
     inline LocIpcLocalSender(const char* name) : LocIpcSender(),
-            mSock(make_shared<Sock>((nullptr == name) ? -1 : (::socket(AF_UNIX, SOCK_DGRAM, 0)))),
+            mSock(nullptr),
             mAddr({.sun_family = AF_UNIX, {}}) {
+
+        int fd = -1;
+        if (nullptr != name) {
+            fd = ::socket(AF_UNIX, SOCK_DGRAM, 0);
+            if (fd >= 0) {
+                timeval timeout;
+                timeout.tv_sec = 2;
+                timeout.tv_usec = 0;
+                setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
+            }
+        }
+        mSock.reset(new Sock(fd));
         if (mSock != nullptr && mSock->isValid()) {
             snprintf(mAddr.sun_path, sizeof(mAddr.sun_path), "%s", name);
         }
@@ -152,7 +163,7 @@ class LocIpcLocalRecver : public LocIpcLocalSender, public LocIpcRecver {
 protected:
     inline virtual ssize_t recv() const override {
         socklen_t size = sizeof(mAddr);
-        return mSock->recv(mDataCb, 0, (struct sockaddr*)&mAddr, &size);
+        return mSock->recv(*this, mDataCb, 0, (struct sockaddr*)&mAddr, &size);
     }
 public:
     inline LocIpcLocalRecver(const shared_ptr<ILocIpcListener>& listener, const char* name) :
@@ -164,7 +175,8 @@ public:
 
         umask(0157);
         if (mSock->isValid() && ::bind(mSock->mSid, (struct sockaddr*)&mAddr, sizeof(mAddr)) < 0) {
-            LOC_LOGe("bind socket error. sock fd: %d, reason: %s", mSock->mSid, strerror(errno));
+            LOC_LOGe("bind socket error. sock fd: %d: %s, reason: %s", mSock->mSid,
+                    mAddr.sun_path, strerror(errno));
             mSock->close();
         }
     }
@@ -177,26 +189,27 @@ public:
     }
 };
 
-class LocIpcInetTcpSender : public LocIpcSender {
+class LocIpcInetSender : public LocIpcSender {
 protected:
+    int mSockType;
     shared_ptr<Sock> mSock;
     const string mName;
     sockaddr_in mAddr;
-    mutable bool mFirstTime;
     inline virtual bool isOperable() const override { return mSock != nullptr && mSock->isValid(); }
-    inline virtual ssize_t send(const uint8_t data[], uint32_t length, int32_t /* msgId */) const {
-        if (mFirstTime) {
-            mFirstTime = false;
-            ::connect(mSock->mSid, (const struct sockaddr*)&mAddr, sizeof(mAddr));
-        }
+    virtual ssize_t send(const uint8_t data[], uint32_t length, int32_t /* msgId */) const {
         return mSock->send(data, length, 0, (struct sockaddr*)&mAddr, sizeof(mAddr));
     }
 public:
-    inline LocIpcInetTcpSender(const char* name, int32_t port) : LocIpcSender(),
-            mSock(make_shared<Sock>((nullptr == name) ? -1 : (::socket(AF_INET, SOCK_STREAM, 0)))),
+    inline LocIpcInetSender(const LocIpcInetSender& sender) :
+            mSockType(sender.mSockType), mSock(sender.mSock),
+            mName(sender.mName), mAddr(sender.mAddr) {
+    }
+    inline LocIpcInetSender(const char* name, int32_t port, int sockType) : LocIpcSender(),
+            mSockType(sockType),
+            mSock(make_shared<Sock>((nullptr == name) ? -1 : (::socket(AF_INET, mSockType, 0)))),
             mName((nullptr == name) ? "" : name),
-            mAddr({.sin_family=AF_INET, .sin_port=htons(port), .sin_addr={htonl(INADDR_ANY)}}),
-            mFirstTime(true) {
+            mAddr({.sin_family = AF_INET, .sin_port = htons(port),
+                    .sin_addr = {htonl(INADDR_ANY)}}) {
         if (mSock != nullptr && mSock->isValid() && nullptr != name) {
             struct hostent* hp = gethostbyname(name);
             if (nullptr != hp) {
@@ -204,9 +217,59 @@ public:
             }
         }
     }
+
+    unique_ptr<LocIpcRecver> getRecver(const shared_ptr<ILocIpcListener>& listener) override {
+        return make_unique<SockRecver>(listener, *this, mSock);
+    }
 };
 
-class LocIpcInetTcpRecver : public LocIpcInetTcpSender, public LocIpcRecver {
+class LocIpcInetTcpSender : public LocIpcInetSender {
+protected:
+    mutable bool mFirstTime;
+
+    virtual ssize_t send(const uint8_t data[], uint32_t length, int32_t /* msgId */) const {
+        if (mFirstTime) {
+            mFirstTime = false;
+            ::connect(mSock->mSid, (const struct sockaddr*)&mAddr, sizeof(mAddr));
+        }
+        return mSock->send(data, length, 0, (struct sockaddr*)&mAddr, sizeof(mAddr));
+    }
+
+public:
+    inline LocIpcInetTcpSender(const char* name, int32_t port) :
+            LocIpcInetSender(name, port, SOCK_STREAM),
+            mFirstTime(true) {}
+};
+
+class LocIpcInetRecver : public LocIpcInetSender, public LocIpcRecver {
+     int32_t mPort;
+protected:
+     virtual ssize_t recv() const = 0;
+public:
+    inline LocIpcInetRecver(const shared_ptr<ILocIpcListener>& listener, const char* name,
+                               int32_t port, int sockType) :
+            LocIpcInetSender(name, port, sockType), LocIpcRecver(listener, *this),
+            mPort(port) {
+        if (mSock->isValid() && ::bind(mSock->mSid, (struct sockaddr*)&mAddr, sizeof(mAddr)) < 0) {
+            LOC_LOGe("bind socket error. sock fd: %d, reason: %s", mSock->mSid, strerror(errno));
+            mSock->close();
+        }
+    }
+    inline virtual ~LocIpcInetRecver() {}
+    inline virtual const char* getName() const override { return mName.data(); };
+    inline virtual void abort() const override {
+        if (isSendable()) {
+            sockaddr_in loopBackAddr = {.sin_family = AF_INET, .sin_port = htons(mPort),
+                    .sin_addr = {htonl(INADDR_LOOPBACK)}};
+            mSock->sendAbort(0, (struct sockaddr*)&loopBackAddr, sizeof(loopBackAddr));
+        }
+    }
+    inline virtual unique_ptr<LocIpcSender> getLastSender() const override {
+        return make_unique<LocIpcInetSender>(static_cast<const LocIpcInetSender&>(*this));
+    }
+};
+
+class LocIpcInetTcpRecver : public LocIpcInetRecver {
     mutable int32_t mConnFd;
 protected:
     inline virtual ssize_t recv() const override {
@@ -218,54 +281,28 @@ protected:
                 mConnFd = -1;
             }
         }
-        return mSock->recv(mDataCb, 0, (struct sockaddr*)&mAddr, &size, mConnFd);
+        return mSock->recv(*this, mDataCb, 0, (struct sockaddr*)&mAddr, &size, mConnFd);
     }
 public:
     inline LocIpcInetTcpRecver(const shared_ptr<ILocIpcListener>& listener, const char* name,
                                int32_t port) :
-            LocIpcInetTcpSender(name, port), LocIpcRecver(listener, *this), mConnFd(-1) {
-        if (mSock->isValid() && ::bind(mSock->mSid, (struct sockaddr*)&mAddr, sizeof(mAddr)) < 0) {
-            LOC_LOGe("bind socket error. sock fd: %d, reason: %s", mSock->mSid, strerror(errno));
-            mSock->close();
-        }
-    }
-    inline virtual ~LocIpcInetTcpRecver() { if (-1 != mConnFd) ::close(mConnFd); }
-    inline virtual const char* getName() const override { return mName.data(); };
-    inline virtual void abort() const override {
-        if (isSendable()) {
-            mSock->sendAbort(0, (struct sockaddr*)&mAddr, sizeof(mAddr));
-        }
-    }
+            LocIpcInetRecver(listener, name, port, SOCK_STREAM), mConnFd(-1) {}
+    inline virtual ~LocIpcInetTcpRecver() { if (-1 != mConnFd) ::close(mConnFd);}
 };
 
-#ifdef NOT_DEFINED
-class LocIpcQcsiSender : public LocIpcSender {
+class LocIpcInetUdpRecver : public LocIpcInetRecver {
 protected:
-    inline virtual bool isOperable() const override {
-        return mService != nullptr && mService->isServiceRegistered();
+    inline virtual ssize_t recv() const override {
+        socklen_t size = sizeof(mAddr);
+        return mSock->recv(*this, mDataCb, 0, (struct sockaddr*)&mAddr, &size);
     }
-    inline virtual ssize_t send(const uint8_t data[], uint32_t length, int32_t msgId) const override {
-        return mService->sendIndToClient(msgId, data, length);
-    }
-    inline LocIpcQcsiSender(shared_ptr<QcsiService>& service) : mService(service) {}
 public:
-    inline virtual ~LocIpcQcsi() {}
-};
+    inline LocIpcInetUdpRecver(const shared_ptr<ILocIpcListener>& listener, const char* name,
+                                int32_t port) :
+            LocIpcInetRecver(listener, name, port, SOCK_DGRAM) {}
 
-class LocIpcQcsiRecver : public LocIpcQcsiSender, public LocIpcRecver {
-protected:
-    inline virtual ssize_t recv() const override { return mService->recv(); }
-public:
-    inline LocIpcQcsiRecver(unique_ptr<QcsiService>& service) :
-            LocIpcQcsiSender(service), LocIpcRecver(mService->getDataCallback(), *this) {
-    }
-    // only the dele
-    inline ~LocIpcQcsiRecver() {}
-    inline virtual const char* getName() const override { return mService->getName().data(); };
-    inline virtual void abort() const override { if (isSendable()) mService->abort(); }
-    shared_ptr<LocIpcQcsiSender> getSender() { return make_pare<LocIpcQcsiSender>(mService); }
+    inline virtual ~LocIpcInetUdpRecver() {}
 };
-#endif
 
 class LocIpcRunnable : public LocRunnable {
     bool mAbortCalled;
@@ -354,28 +391,26 @@ unique_ptr<LocIpcRecver> LocIpc::getLocIpcQrtrRecver(const shared_ptr<ILocIpcLis
                                                      int service, int instance) {
     typedef unique_ptr<LocIpcRecver> (*creator_t)(const shared_ptr<ILocIpcListener>&, int, int);
     static creator_t creator = (creator_t)dlGetSymFromLib(sLibQrtrHandle, sLibQrtrName,
+#ifdef USE_GLIB
+            "_ZN8loc_util22createLocIpcQrtrRecverERKSt10shared_ptrINS_15ILocIpcListenerEEii");
+#else
             "_ZN8loc_util22createLocIpcQrtrRecverERKNSt3__110shared_ptrINS_15ILocIpcListenerEEEii");
-    return (nullptr == creator) ? nullptr : creator(listener, service, instance);
-}
-shared_ptr<LocIpcSender> LocIpc::getLocIpcQsockSender(int service, int instance) {
-    typedef shared_ptr<LocIpcSender> (*creator_t) (int, int);
-    static creator_t creator = (creator_t)dlGetSymFromLib(sLibQrtrHandle, sLibQrtrName,
-            "_ZN8loc_util23createLocIpcQsockSenderEii");
-    return (nullptr == creator) ? nullptr : creator(service, instance);
-}
-unique_ptr<LocIpcRecver> LocIpc::getLocIpcQsockRecver(const shared_ptr<ILocIpcListener>& listener,
-                                                      int service, int instance) {
-    typedef unique_ptr<LocIpcRecver> (*creator_t)(const shared_ptr<ILocIpcListener>&, int, int);
-    static creator_t creator = (creator_t)dlGetSymFromLib(sLibQrtrHandle, sLibQrtrName,
-            "_ZN8loc_util23createLocIpcQsockRecverERKSt10shared_ptrINS_15ILocIpcListenerEEii");
+#endif
     return (nullptr == creator) ? nullptr : creator(listener, service, instance);
 }
 shared_ptr<LocIpcSender> LocIpc::getLocIpcInetTcpSender(const char* serverName, int32_t port) {
     return make_shared<LocIpcInetTcpSender>(serverName, port);
 }
 unique_ptr<LocIpcRecver> LocIpc::getLocIpcInetTcpRecver(const shared_ptr<ILocIpcListener>& listener,
-                                                        const char* serverName, int32_t port) {
+                                                            const char* serverName, int32_t port) {
     return make_unique<LocIpcInetTcpRecver>(listener, serverName, port);
+}
+shared_ptr<LocIpcSender> LocIpc::getLocIpcInetUdpSender(const char* serverName, int32_t port) {
+    return make_shared<LocIpcInetSender>(serverName, port, SOCK_DGRAM);
+}
+unique_ptr<LocIpcRecver> LocIpc::getLocIpcInetUdpRecver(const shared_ptr<ILocIpcListener>& listener,
+                                                             const char* serverName, int32_t port) {
+    return make_unique<LocIpcInetUdpRecver>(listener, serverName, port);
 }
 pair<shared_ptr<LocIpcSender>, unique_ptr<LocIpcRecver>>
         LocIpc::getLocIpcQmiLocServiceSenderRecverPair(const shared_ptr<ILocIpcListener>& listener, int instance) {
