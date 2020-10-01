@@ -43,13 +43,20 @@ namespace loc_core {
 // the right locApi should get created.
 LocAdapterBase::LocAdapterBase(const LOC_API_ADAPTER_EVENT_MASK_T mask,
                                ContextBase* context, bool isMaster,
-                               LocAdapterProxyBase *adapterProxyBase) :
+                               LocAdapterProxyBase *adapterProxyBase,
+                               bool waitForDoneInit) :
     mIsMaster(isMaster), mEvtMask(mask), mContext(context),
     mLocApi(context->getLocApi()), mLocAdapterProxyBase(adapterProxyBase),
     mMsgTask(context->getMsgTask()),
     mIsEngineCapabilitiesKnown(ContextBase::sIsEngineCapabilitiesKnown)
 {
-    mLocApi->addAdapter(this);
+    LOC_LOGd("waitForDoneInit: %d", waitForDoneInit);
+    if (!waitForDoneInit) {
+        mLocApi->addAdapter(this);
+        mAdapterAdded = true;
+    } else {
+        mAdapterAdded = false;
+    }
 }
 
 uint32_t LocAdapterBase::mSessionIdCounter(1);
@@ -81,7 +88,6 @@ void LocAdapterBase::
                         const GpsLocationExtended& locationExtended,
                         enum loc_sess_status status,
                         LocPosTechMask loc_technology_mask,
-                        bool /*fromEngineHub*/,
                         GnssDataNotification* pDataNotify,
                         int msInWeek)
 {
@@ -154,7 +160,9 @@ bool LocAdapterBase::
 DEFAULT_IMPL(false)
 
 bool LocAdapterBase::
-    requestNiNotifyEvent(const GnssNiNotification &/*notify*/, const void* /*data*/)
+    requestNiNotifyEvent(const GnssNiNotification &/*notify*/,
+                         const void* /*data*/,
+                         const LocInEmergency emergencyState)
 DEFAULT_IMPL(false)
 
 void LocAdapterBase::
