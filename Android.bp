@@ -55,7 +55,6 @@ GNSS_SANITIZE = {
 /*  address: true,*/
     cfi: true,
     misc_undefined: [
-        "alignment",
         "bounds",
         "null",
         "unreachable",
@@ -70,7 +69,6 @@ GNSS_SANITIZE_DIAG = {
     diag: {
         cfi: true,
         misc_undefined: [
-            "alignment",
             "bounds",
             "null",
             "unreachable",
