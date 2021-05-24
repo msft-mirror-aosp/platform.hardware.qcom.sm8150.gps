@@ -37,12 +37,8 @@ using namespace loc_core;
 
 GeofenceAdapter::GeofenceAdapter() :
     LocAdapterBase(0,
-                    LocContext::getLocContext(
-                        NULL,
-                        NULL,
-                        LocContext::mLocationHalName,
-                        false),
-                    true /*isMaster*/, nullptr, true)
+                   LocContext::getLocContext(LocContext::mLocationHalName),
+                   true /*isMaster*/)
 {
     LOC_LOGD("%s]: Constructor", __func__);
     // at last step, let us inform adapater base that we are done
