@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2014, 2016-2019 The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2014, 2016-2020 The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -156,7 +156,7 @@ public:
         return ContextBase::isFeatureSupported(featureVal);
     }
 
-    uint32_t generateSessionId();
+    static uint32_t generateSessionId();
 
     inline bool isAdapterMaster() {
         return mIsMaster;
@@ -206,6 +206,7 @@ public:
             GpsLocationExtended &location_extended, LocPosTechMask tech_mask);
     virtual void reportGnssSvIdConfigEvent(const GnssSvIdConfig& config);
     virtual void reportGnssSvTypeConfigEvent(const GnssSvTypeConfig& config);
+    virtual void reportGnssConfigEvent(uint32_t sessionId, const GnssConfig& gnssConfig);
     virtual bool requestOdcpiEvent(OdcpiRequestInfo& request);
     virtual bool reportGnssEngEnergyConsumedEvent(uint64_t energyConsumedSinceFirstBoot);
     virtual bool reportDeleteAidingDataEvent(GnssAidingData &aidingData);
@@ -235,6 +236,9 @@ public:
                              removeClientCompleteCallback rmClientCb);
     void requestCapabilitiesCommand(LocationAPI* client);
 
+    virtual void reportLatencyInfoEvent(const GnssLatencyInfo& gnssLatencyInfo);
+    virtual bool reportQwesCapabilities(
+            const std::unordered_map<LocationQwesFeatureType, bool> &featureMap);
 };
 
 } // namespace loc_core
