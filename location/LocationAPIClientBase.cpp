@@ -608,7 +608,7 @@ uint32_t LocationAPIClientBase::locAPIUpdateSessionOptions(
             retVal = LOCATION_ERROR_SUCCESS;
         } else {
             retVal = LOCATION_ERROR_ID_UNKNOWN;
-            LOC_LOGE("%s:%d] session %d is not exist.", __FUNCTION__, __LINE__, id);
+            LOC_LOGd("unknown session id: %d, might flush() a stopped session",  id);
         }
     }
     pthread_mutex_unlock(&mMutex);
