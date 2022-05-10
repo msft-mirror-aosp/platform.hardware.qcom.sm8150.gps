@@ -45,8 +45,6 @@ using android::hardware::interfacesEqual;
 using android::hardware::Return;
 using android::hardware::Void;
 using android::hardware::health::V1_0::BatteryStatus;
-using android::hardware::health::V1_0::toString;
-using android::hardware::health::V2_0::get_health_service;
 using android::hardware::health::V2_1::HealthInfo;
 using android::hardware::health::V2_1::IHealthInfoCallback;
 using android::hardware::health::V2_1::IHealth;
@@ -98,7 +96,7 @@ status_t BatteryListenerImpl::init()
         return INVALID_OPERATION;
 
     do {
-        mHealth = IHealth::getService("default", true);
+        mHealth = IHealth::getService();
         if (mHealth != NULL)
             break;
         usleep(GET_HEALTH_SVC_WAIT_TIME_MS * 1000);
@@ -187,7 +185,7 @@ BatteryListenerImpl::~BatteryListenerImpl()
     {
         std::lock_guard<std::mutex> _l(mLock);
         if (mHealth != NULL)
-            mHealth->unlinkToDeath(this);
+            mHealth->unregisterCallback(this);
             auto r = mHealth->unlinkToDeath(this);
             if (!r.isOk() || r == false) {
                 LOC_LOGe("Transaction error in unregister to HealthHAL death: %s",
@@ -210,6 +208,8 @@ void BatteryListenerImpl::serviceDied(uint64_t cookie __unused,
         LOC_LOGi("health service died, reinit");
         mDone = true;
     }
+    mHealth = NULL;
+    mCond.notify_one();
     mThread->join();
     std::lock_guard<std::mutex> _l(mLock);
     init();
@@ -262,6 +262,7 @@ status_t batteryPropertiesListenerDeinit() {
 } // namespace android
 
 void loc_extn_battery_properties_listener_init(battery_status_change_fn_t fn) {
+    LOC_LOGv("loc_extn_battery_properties_listener_init entry");
     if (!sIsBatteryListened) {
         std::thread t1(android::batteryPropertiesListenerInit,
                 [=](bool charging) { fn(charging); });
