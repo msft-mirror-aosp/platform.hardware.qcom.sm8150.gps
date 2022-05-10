@@ -31,6 +31,7 @@
 #define LOG_TAG "LocSvc_GnssAPIClient"
 #define SINGLE_SHOT_MIN_TRACKING_INTERVAL_MSEC (590 * 60 * 60 * 1000) // 590 hours
 
+#include <inttypes.h>
 #include <log_util.h>
 #include <loc_cfg.h>
 
@@ -141,9 +142,7 @@ void GnssAPIClient::setCallbacks()
     locationCallbacks.gnssNiCb = nullptr;
     if (mGnssNiCbIface != nullptr) {
         loc_core::ContextBase* context =
-                loc_core::LocContext::getLocContext(
-                        NULL, NULL,
-                        loc_core::LocContext::mLocationHalName, false);
+                loc_core::LocContext::getLocContext(loc_core::LocContext::mLocationHalName);
         if (!context->hasAgpsExtendedCapabilities()) {
             LOC_LOGD("Registering NI CB");
             locationCallbacks.gnssNiCb = [this](uint32_t id, GnssNiNotification gnssNiNotify) {
@@ -382,7 +381,7 @@ void GnssAPIClient::requestCapabilities() {
 // callbacks
 void GnssAPIClient::onCapabilitiesCb(LocationCapabilitiesMask capabilitiesMask)
 {
-    LOC_LOGD("%s]: (%02x)", __FUNCTION__, capabilitiesMask);
+    LOC_LOGD("%s]: (%" PRIu64 ")", __FUNCTION__, capabilitiesMask);
     mLocationCapabilitiesMask = capabilitiesMask;
     mLocationCapabilitiesCached = true;
 
@@ -394,7 +393,17 @@ void GnssAPIClient::onCapabilitiesCb(LocationCapabilitiesMask capabilitiesMask)
 
     if (gnssCbIface_2_1 != nullptr ||gnssCbIface_2_0 != nullptr || gnssCbIface != nullptr) {
 
-        uint32_t data = (uint32_t) V2_1::IGnssCallback::Capabilities::ANTENNA_INFO;
+        uint32_t antennaInfoVectorSize = 0;
+        uint32_t data = 0;
+        loc_param_s_type ant_info_vector_table[] =
+        {
+            { "ANTENNA_INFO_VECTOR_SIZE", &antennaInfoVectorSize, NULL, 'n' }
+        };
+        UTIL_READ_CONF(LOC_PATH_ANT_CORR, ant_info_vector_table);
+
+        if (0 != antennaInfoVectorSize) {
+            data |= V2_1::IGnssCallback::Capabilities::ANTENNA_INFO;
+        }
 
         if ((capabilitiesMask & LOCATION_CAPABILITIES_TIME_BASED_TRACKING_BIT) ||
                 (capabilitiesMask & LOCATION_CAPABILITIES_TIME_BASED_BATCHING_BIT) ||
@@ -416,20 +425,23 @@ void GnssAPIClient::onCapabilitiesCb(LocationCapabilitiesMask capabilitiesMask)
         if (capabilitiesMask & LOCATION_CAPABILITIES_MEASUREMENTS_CORRECTION_BIT)
             data |= V2_0::IGnssCallback::Capabilities::MEASUREMENT_CORRECTIONS;
 
-        IGnssCallback::GnssSystemInfo gnssInfo;
-        if (capabilitiesMask & LOCATION_CAPABILITIES_MEASUREMENTS_CORRECTION_BIT) {
-            gnssInfo.yearOfHw = 2020;
-        }  else if (capabilitiesMask & LOCATION_CAPABILITIES_PRIVACY_BIT) {
-            gnssInfo.yearOfHw = 2019;
-        } else if (capabilitiesMask & LOCATION_CAPABILITIES_CONSTELLATION_ENABLEMENT_BIT ||
-            capabilitiesMask & LOCATION_CAPABILITIES_AGPM_BIT) {
-            gnssInfo.yearOfHw = 2018;
-        } else if (capabilitiesMask & LOCATION_CAPABILITIES_DEBUG_NMEA_BIT) {
-            gnssInfo.yearOfHw = 2017;
-        } else if (capabilitiesMask & LOCATION_CAPABILITIES_GNSS_MEASUREMENTS_BIT) {
-            gnssInfo.yearOfHw = 2016;
-        } else {
-            gnssInfo.yearOfHw = 2015;
+        IGnssCallback::GnssSystemInfo gnssInfo = { .yearOfHw = 2015 };
+
+        if (capabilitiesMask & LOCATION_CAPABILITIES_GNSS_MEASUREMENTS_BIT) {
+            gnssInfo.yearOfHw++; // 2016
+            if (capabilitiesMask & LOCATION_CAPABILITIES_DEBUG_NMEA_BIT) {
+                gnssInfo.yearOfHw++; // 2017
+                if (capabilitiesMask & LOCATION_CAPABILITIES_CONSTELLATION_ENABLEMENT_BIT ||
+                    capabilitiesMask & LOCATION_CAPABILITIES_AGPM_BIT) {
+                    gnssInfo.yearOfHw++; // 2018
+                    if (capabilitiesMask & LOCATION_CAPABILITIES_PRIVACY_BIT) {
+                        gnssInfo.yearOfHw++; // 2019
+                        if (capabilitiesMask & LOCATION_CAPABILITIES_MEASUREMENTS_CORRECTION_BIT) {
+                            gnssInfo.yearOfHw++; // 2020
+                        }
+                    }
+                }
+            }
         }
         LOC_LOGV("%s:%d] set_system_info_cb (%d)", __FUNCTION__, __LINE__, gnssInfo.yearOfHw);
 
@@ -636,7 +648,7 @@ void GnssAPIClient::onGnssNmeaCb(GnssNmeaNotification gnssNmeaNotification)
     auto gnssCbIface_2_1(mGnssCbIface_2_1);
     mMutex.unlock();
 
-    if (gnssCbIface != nullptr || gnssCbIface_2_0 != nullptr| gnssCbIface_2_1 != nullptr) {
+    if (gnssCbIface != nullptr || gnssCbIface_2_0 != nullptr || gnssCbIface_2_1 != nullptr) {
         const std::string s(gnssNmeaNotification.nmea);
         std::stringstream ss(s);
         std::string each;
@@ -778,7 +790,7 @@ static void convertGnssSvStatus(GnssSvNotification& in, V1_0::IGnssCallback::Gns
         out.numSvs = static_cast<uint32_t>(V1_0::GnssMax::SVS_COUNT);
     }
     for (size_t i = 0; i < out.numSvs; i++) {
-        out.gnssSvList[i].svid = in.gnssSvs[i].svId;
+        convertGnssSvid(in.gnssSvs[i], out.gnssSvList[i].svid);
         convertGnssConstellationType(in.gnssSvs[i].type, out.gnssSvList[i].constellation);
         out.gnssSvList[i].cN0Dbhz = in.gnssSvs[i].cN0Dbhz;
         out.gnssSvList[i].elevationDegrees = in.gnssSvs[i].elevation;
@@ -801,7 +813,7 @@ static void convertGnssSvStatus(GnssSvNotification& in,
 {
     out.resize(in.count);
     for (size_t i = 0; i < in.count; i++) {
-        out[i].v1_0.svid = in.gnssSvs[i].svId;
+        convertGnssSvid(in.gnssSvs[i], out[i].v1_0.svid);
         out[i].v1_0.cN0Dbhz = in.gnssSvs[i].cN0Dbhz;
         out[i].v1_0.elevationDegrees = in.gnssSvs[i].elevation;
         out[i].v1_0.azimuthDegrees = in.gnssSvs[i].azimuth;
@@ -825,7 +837,7 @@ static void convertGnssSvStatus(GnssSvNotification& in,
 {
     out.resize(in.count);
     for (size_t i = 0; i < in.count; i++) {
-        out[i].v2_0.v1_0.svid = in.gnssSvs[i].svId;
+        convertGnssSvid(in.gnssSvs[i], out[i].v2_0.v1_0.svid);
         out[i].v2_0.v1_0.cN0Dbhz = in.gnssSvs[i].cN0Dbhz;
         out[i].v2_0.v1_0.elevationDegrees = in.gnssSvs[i].elevation;
         out[i].v2_0.v1_0.azimuthDegrees = in.gnssSvs[i].azimuth;
@@ -841,7 +853,7 @@ static void convertGnssSvStatus(GnssSvNotification& in,
             out[i].v2_0.v1_0.svFlag |= IGnssCallback::GnssSvFlags::HAS_CARRIER_FREQUENCY;
 
         convertGnssConstellationType(in.gnssSvs[i].type, out[i].v2_0.constellation);
-        out[i].basebandCN0DbHz = in.gnssSvs[i].cN0Dbhz;
+        out[i].basebandCN0DbHz = in.gnssSvs[i].basebandCarrierToNoiseDbHz;
     }
 }
 
